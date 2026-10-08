@@ -27,6 +27,7 @@ function fixture({ vertical = false, rtl = false, motion = "full", interactive =
     getAttribute: (key: string) => key === "aria-orientation" ? vertical ? "vertical" : "horizontal" : null,
     dataset: {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: vertical ? 32 : 158, height: vertical ? 158 : 32 }),
     querySelectorAll: () => tabs,
+    contains: (node: object) => tabs.some((tab) => tab === node),
   } as unknown as HTMLElement;
   let selected = 0, forceActive = false, time = 0;
   const tabs = [46, 54, 52].map((length, i, lengths) => {
@@ -88,6 +89,7 @@ test("dragging commits once, skips disabled tabs and works with reduced motion, 
       f.tabs[1]!.disabled = true;
       const start = options.rtl ? 132 : 26, end = options.rtl ? 29 : 129;
       f.input.send("pointerdown", f.pointer(start));
+      f.input.send("focusout", { relatedTarget: f.tabs[2] });
       expect(f.view.send("pointermove", f.pointer(end))).toBe(true);
       f.frames(40);
       f.view.send("pointerup", f.pointer(end));

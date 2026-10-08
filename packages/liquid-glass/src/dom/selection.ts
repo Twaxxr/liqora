@@ -86,11 +86,17 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
     if (!event.repeat && tab?.closest('[role="tablist"]') === list && enabled(tab)) keyboard = true;
   }
   function blur() { keyboard = false; end(); }
+  function focusout(event: FocusEvent) {
+    keyboard = false;
+    // Pointer-down moves focus between tabs after the gesture has started.
+    // Only leaving the list should cancel that gesture.
+    if (!event.relatedTarget || !list!.contains(event.relatedTarget as Node)) end();
+  }
   list.addEventListener("pointerdown", down);
   list.addEventListener("click", click, true);
   list.addEventListener("keydown", key);
   list.addEventListener("keyup", key);
-  list.addEventListener("focusout", blur);
+  list.addEventListener("focusout", focusout);
   view.addEventListener("blur", blur);
 
   return {
@@ -156,7 +162,7 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
       list.removeEventListener("click", click, true);
       list.removeEventListener("keydown", key);
       list.removeEventListener("keyup", key);
-      list.removeEventListener("focusout", blur);
+      list.removeEventListener("focusout", focusout);
       view.removeEventListener("blur", blur);
       Object.assign(indicator.style, saved);
       delete indicator.dataset.glassLifted;
