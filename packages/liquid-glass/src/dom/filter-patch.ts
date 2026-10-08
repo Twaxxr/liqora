@@ -1,12 +1,56 @@
-/** Keep SVG filters as retained elements. Each frame's markup is parsed into
- * an inert template and compared with the live filters: matching filters only
- * have changed attributes written, so image primitives keep their loaded
+/** Keep SVG filters as retained elements. Only structural changes need an
+ * inert SVG template. Motion updates the attributes of the retained graph
+ * directly, so image primitives keep their loaded
  * images and filter references stay valid. Rebuilding filter markup instead
  * makes every image reload asynchronously, which shows as the material
  * blinking for a frame whenever a surface animates. Image primitives name
  * their map with a short `data-map` token, resolved to its URL only when the
  * map changes. */
 const previousMarkup = new WeakMap<Element, Map<string, string>>();
+interface RetainedTag { source: string; shape: string; attributes: [string, string][]; element?: Element }
+const retained = new WeakMap<Element, RetainedTag[]>();
+/** These strings are generated internally. Entity-bearing markup takes the
+ * DOM parser path, which preserves its decoding and namespace semantics. */
+function tags(text: string, previous?: RetainedTag[]): RetainedTag[] | undefined {
+  if (/&(?:#\w+|\w+);/.test(text)) return;
+  return [...text.matchAll(/<\/?[\w:-]+\b[^>]*>/g)].map(([source], index) => ({ source,
+    shape: /^<\/?[\w:-]+/.exec(source)![0] + (source.endsWith("/>") ? "/" : ""),
+    attributes: previous?.[index]?.source === source ? previous[index]!.attributes
+      : [...source.matchAll(/([\w:-]+)="([^"]*)"/g)].map(([, name, value]) => [name!, value!]),
+  }));
+}
+function retain(filter: Element, text: string) {
+  const frame = tags(text);
+  if (!frame) { retained.delete(filter); return; }
+  const elements = [filter, ...filter.querySelectorAll("*")];
+  let index = 0;
+  for (const tag of frame) if (!tag.source.startsWith("</")) tag.element = elements[index++];
+  if (index === elements.length) retained.set(filter, frame);
+}
+function updateAttributes(filter: Element, text: string, resolve: (token: string) => string | undefined): boolean {
+  const before = retained.get(filter), next = tags(text, before);
+  if (!before || !next || before.length !== next.length) return false;
+  // Validate the complete graph before writing. Result names identify
+  // retained primitives when surfaces enter, leave, or change paint order.
+  for (let i = 0; i < next.length; i++) {
+    const a = before[i]!, b = next[i]!;
+    if (a.shape !== b.shape || a.attributes.length !== b.attributes.length ||
+      a.attributes.some(([name, value], j) => name !== b.attributes[j]![0] || name === "result" && value !== b.attributes[j]![1])) return false;
+    b.element = a.element;
+  }
+  for (let i = 0; i < next.length; i++) {
+    const a = before[i]!, b = next[i]!, element = b.element;
+    if (!element || a.source === b.source) continue;
+    for (let j = 0; j < b.attributes.length; j++) {
+      const [name, value] = b.attributes[j]!;
+      if (name === "id" && element === filter || value === a.attributes[j]![1]) continue;
+      element.setAttribute(name, value);
+      if (name === "data-map") link(element, resolve);
+    }
+  }
+  retained.set(filter, next);
+  return true;
+}
 export function patchFilters(defs: Element, markup: readonly string[], resolve: (token: string) => string | undefined): (id: string) => string {
   const previous = previousMarkup.get(defs);
   const written = new Map<string, string>();
@@ -23,12 +67,17 @@ export function patchFilters(defs: Element, markup: readonly string[], resolve: 
       ids.set(base, current.id);
       continue;
     }
+    if (current && updateAttributes(current, text, resolve)) {
+      ids.set(base, current.id);
+      continue;
+    }
     const template = defs.ownerDocument.createElement("template");
     // Only changed filters need parsing; static neighbours retain their graph.
     template.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${text}</svg>`;
     const filter = template.content.firstElementChild!.firstElementChild!;
     if (current) {
       reconcile(current, filter, resolve);
+      retain(current, text);
       ids.set(base, current.id);
       continue;
     }
@@ -41,6 +90,7 @@ export function patchFilters(defs: Element, markup: readonly string[], resolve: 
     // Link images once connected: a detached feImage does not repaint its
     // filter when its image arrives.
     for (const image of created.querySelectorAll("[data-map]")) link(image, resolve);
+    retain(created, text);
     ids.set(base, created.id);
   }
   for (const filter of live.values()) filter.remove();

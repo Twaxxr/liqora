@@ -31,6 +31,8 @@ interface Shape {
   rows: number;
   dpr: number;
   segments: number[][];
+  cornerBounds: number[];
+  straightSides: boolean;
   resolve: (pixels: MapPixels) => void;
   reject: (error: Error) => void;
   started: number;
@@ -58,7 +60,18 @@ function measure(g: MapGeometry): Omit<Shape, "resolve" | "reject" | "started"> 
   if (columns > 4096 || rows * 4 > maxAtlasRows)
     throw new RangeError("Glass map exceeds the 4096 × 2048 pixel surface limit.");
   const { segments } = g.outline ? outlineSegments(g.outline) : shapeSegments(g.width, g.height, g.radius);
-  return { geometry: g, columns, rows, dpr, segments };
+  const first = segments[0]!, last = segments.at(-1)!;
+  const straightSides = !g.outline && segments.length > 2 && first[1] === 0 && first[3] === 0 && last[0] === g.width && last[2] === g.width;
+  const corner = straightSides ? segments.slice(1, -1) : [];
+  // Conservative corner bounds let pixels nearer a straight side skip the
+  // curved segments entirely. Expand before float32 packing, never the shape.
+  const cornerBounds = corner.length ? [
+    Math.min(...corner.flatMap((s) => [s[0]!, s[2]!])) - .001,
+    Math.min(...corner.flatMap((s) => [s[1]!, s[3]!])) - .001,
+    Math.max(...corner.flatMap((s) => [s[0]!, s[2]!])) + .001,
+    Math.max(...corner.flatMap((s) => [s[1]!, s[3]!])) + .001,
+  ] : [0, 0, 0, 0];
+  return { geometry: g, columns, rows, dpr, segments, cornerBounds, straightSides };
 }
 /** One storage texture per batch in flight, reused after its readback completes. */
 interface Slot { texture: Texture; busy: boolean }
@@ -79,7 +92,7 @@ export class MaterialRenderer {
    * surface's first animation. */
   readonly warmed: Promise<void>;
   constructor(private readonly gpu: Gpu) {
-    const blank = { size: [1, 1], row: 0, rows: 1, columns: 1, dpr: 1, dark: 0, symmetric: 1, start: 0, count: 0, pad: [0, 0], optics: [20, 20, 0, 0], lighting: [0, 0, 0, 0] };
+    const blank = { size: [1, 1], row: 0, rows: 1, columns: 1, dpr: 1, dark: 0, symmetric: 1, start: 0, count: 0, pad: [0, 0], optics: [20, 20, 0, 0], lighting: [0, 0, 0, 0], cornerBounds: [0, 0, 0, 0] };
     this.shader = compute(gpu, computeSource, {
       label: "liquid-glass/material-field",
       set: {
@@ -148,7 +161,7 @@ export class MaterialRenderer {
         const entry = {
           size: [s.geometry.width, s.geometry.height], row, rows: s.rows, columns: s.columns, dpr: s.dpr,
           dark: s.geometry.appearance === "dark" ? 1 : 0, symmetric: s.geometry.outline ? 0 : 1,
-          start, count: s.segments.length, pad: [0, 0],
+          start, count: s.segments.length, pad: [Number(s.straightSides), 0], cornerBounds: s.cornerBounds,
           optics: [s.geometry.bezelWidth ?? s.geometry.zRadius ?? 20, s.geometry.zRadius ?? 20,
             s.geometry.bezelProfile === "convex" ? 1 : s.geometry.bezelProfile === "lip" ? 2 : 0, s.geometry.bevelMode ?? 0],
           lighting: [s.geometry.edgeHighlight ?? 0, s.geometry.specular ?? 0, s.geometry.fresnel ?? 0, s.geometry.distortion ?? 0],

@@ -6,12 +6,12 @@ test("pressed controls use the reference's independent specular, refraction and 
   const slider = controlThumbMaterial("slider", {}), toggle = controlThumbMaterial("switch", {});
   expect(slider.specularOpacity).toBe(0.4);
   expect(slider.specularSaturation).toBe(7);
-  expect(slider.refractionLevel).toBe(1);
+  expect(slider.refractionLevel).toBe(0.45);
   expect(materialBlur(slider)).toBe(0);
   expect(slider.bezelProfile).toBe("convex");
   expect(toggle.specularOpacity).toBe(0.5);
   expect(toggle.specularSaturation).toBe(6);
-  expect(toggle.refractionLevel).toBe(1);
+  expect(toggle.refractionLevel).toBe(0.45);
   expect(materialBlur(toggle)).toBe(0.2);
   expect(toggle.bezelProfile).toBe("lip");
 });

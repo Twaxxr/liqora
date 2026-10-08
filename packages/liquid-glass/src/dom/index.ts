@@ -13,7 +13,7 @@ export { attachGeometryMotion, radiusPixels } from "./morph.js";
 export { attachSelectionLens } from "./selection.js";
 export type { GeometryAnimator, GeometryMotionOptions, GlassMorph, LensFrame, LensPlacement, LensWaypoint } from "./morph.js";
 import { shapeDistance } from "../core/morph-path.js";
-import { comparePaintOrder, foregroundFilter, overlaps } from "./foreground.js";
+import { paintOrderComparator, foregroundFilter, overlaps } from "./foreground.js";
 import type { ForegroundLens } from "./foreground.js";
 import { patchFilters } from "./filter-patch.js";
 import { createMapWarmer } from "./warm.js";
@@ -27,7 +27,7 @@ import { blurOutsets, filterBudgetFactor, webkit } from "./filter-budget.js";
 import type { FilterBounds } from "./filter-bounds.js";
 import { materials, materialBlur, materialDispersion, materialMapOptions, materialRefraction, materialSaturation, validateMaterial } from "../core/materials.js";
 import type { MaterialOptions } from "../core/materials.js";
-import { getMaterialMaps, getSurfaceMaterialMaps, peekMaterialMaps, peekSurfaceMaterialMaps } from "./maps.js";
+import { getMaterialMaps, getSurfaceMaterialMaps, peekMaterialMaps, peekSurfaceMaterialMaps, persistMaterialMaps } from "./maps.js";
 import { getMaterialRenderer } from "../gpu/index.js";
 import { capsuleMapGeometry, mapImage, mapUrl } from "./map-image.js";
 import type { MapPlane } from "./map-image.js";
@@ -103,9 +103,10 @@ interface Lens {
   place?: { a: Placed; b: Placed; mix: number; stretched: boolean };
   /** When the layout size last changed. */
   resized?: number;
-  preparing: Set<string>;
+  preparing: Map<string, Promise<void>>;
   shown?: MapGeometry;
   geometryKey?: string;
+  measuredGeometryKey?: string;
   clip: string;
   borderRadius: string;
   releaseShape: () => void;
@@ -157,7 +158,10 @@ export function createGlassScene(
   config: GlassSceneOptions = {},
 ): GlassSceneController {
   const owner = ++serial;
+  const previousScene = root.getAttribute("data-lg-scene");
+  if (previousScene !== "") root.setAttribute("data-lg-scene", "");
   const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("data-lg-internal", "");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("width", "0");
   svg.setAttribute("height", "0");
@@ -260,9 +264,15 @@ export function createGlassScene(
   /** Paint order changes only with the DOM: it is sorted again after a
    * mutation or a registration, never on every frame. */
   let structure = 0, orderedAt = -1, ordered: Lens[] = [];
+  let sampledOrderAt = -1, comparePaintOrder = paintOrderComparator();
+  const ordering = () => {
+    if (sampledOrderAt !== structure) { sampledOrderAt = structure; comparePaintOrder = paintOrderComparator(); }
+    return comparePaintOrder;
+  };
   const order = () => {
     if (orderedAt !== structure) {
-      ordered = [...lenses].sort((a, b) => comparePaintOrder(a.element, b.element));
+      const compare = ordering();
+      ordered = [...lenses].sort((a, b) => compare(a.element, b.element));
       orderedAt = structure;
     }
     return ordered;
@@ -271,7 +281,8 @@ export function createGlassScene(
   let foregroundOrder: (ForegroundLens & { serial: number })[] = [];
   const orderForeground = () => {
     if (foregroundOrderAt !== structure) {
-      foregroundOrder = [...order(), ...foregrounds].sort((a, b) => comparePaintOrder(a.element, b.element));
+      const compare = ordering();
+      foregroundOrder = [...order(), ...foregrounds].sort((a, b) => compare(a.element, b.element));
       foregroundOrderAt = structure;
     }
     return foregroundOrder;
@@ -371,6 +382,7 @@ export function createGlassScene(
           const place = l.place;
           if (!place) return mapImage(m, plane, result, x, y, w, h);
           const at = (q: Placed, name: string) => mapImage(q.maps, plane, name, q.x - 2, q.y - 2, q.w + 4, q.h + 4);
+          if (place.a === place.b) return at(place.a, result);
           return at(place.a, `${result}A`) + at(place.b, `${result}B`)
             + `<feComposite in="${result}A" in2="${result}B" operator="arithmetic" k1="0" k2="${(1 - place.mix).toFixed(4)}" k3="${place.mix.toFixed(4)}" k4="0" result="${result}"/>`;
         };
@@ -587,22 +599,28 @@ export function createGlassScene(
   }
   /** Prepare maps for a shape an animation will pass through. Only resting
    * shapes are kept across loads; the rest render at once. */
-  function prepare(l: Lens, g: MapGeometry, persist: boolean) {
+  function prepare(l: Lens, g: MapGeometry, persist: boolean): Promise<void> {
     const key = mapKey(g);
-    if (l.prepared.has(key) || l.preparing.has(key)) return;
+    const job = l.preparing.get(key);
+    if (job) return job;
+    const prepared = l.prepared.get(key);
+    if (prepared) {
+      if (persist) persistMaterialMaps(g, prepared.maps);
+      return Promise.resolve();
+    }
     // Maps already decoded, or stored from an earlier load, apply at once, so
     // a path that starts on a surface's own shape begins on its own map.
     const settled = peekSurfaceMaterialMaps(g);
     if (settled) {
+      if (persist) persistMaterialMaps(g, settled);
       const warm = warmer.has(settled);
       warmer.warm(settled);
       l.prepared.set(key, { geometry: g, maps: settled, ready: warm ? 0 : performance.now() + warmup });
       dirty = true;
-      return;
+      return Promise.resolve();
     }
-    l.preparing.add(key);
     pending++;
-    getSurfaceMaterialMaps(g, persist)
+    const request = getSurfaceMaterialMaps(g, persist)
       .then((maps) => {
         l.preparing.delete(key);
         if (!disposed && lenses.has(l) && l.path?.some((w) => mapKey({ ...w, dpr: g.dpr, appearance: g.appearance, ...materialMapOptions(g) }) === key)) {
@@ -614,18 +632,21 @@ export function createGlassScene(
       })
       .catch(() => { l.preparing.delete(key); })
       .finally(() => { pending--; ticker.wake(); });
+    l.preparing.set(key, request);
+    return request;
   }
   /** Request maps for a lens geometry. Decoded maps already in the cache
    * apply at once, so a resting shape never waits a task for glass it has
    * shown before. Otherwise one request per lens is in flight; while geometry
    * keeps changing, the newest finished maps stretch to the current outline,
    * and the next request starts as soon as it resolves. */
-  function request(l: Lens, g: MapGeometry, slice: boolean) {
+  function request(l: Lens, g: MapGeometry, slice: boolean, persist = true) {
     const key = slice ? mapKey(g) : JSON.stringify(g);
     if (key === l.key || l.inflight) return;
     const settled = slice ? peekSurfaceMaterialMaps(g) : peekMaterialMaps(g);
     if (settled && (warmer.has(settled) || !l.maps)) {
       l.key = key;
+      if (persist) persistMaterialMaps(g, settled);
       warmer.warm(settled);
       l.maps = settled;
       l.shown = g;
@@ -636,7 +657,7 @@ export function createGlassScene(
     l.key = key;
     l.inflight = true;
     pending++;
-    (slice ? getSurfaceMaterialMaps(g) : getMaterialMaps(g))
+    (slice ? getSurfaceMaterialMaps(g, persist) : getMaterialMaps(g))
       .then((maps) => {
         l.inflight = false;
         if (disposed || !lenses.has(l)) return;
@@ -711,7 +732,15 @@ export function createGlassScene(
         l.path = waypoints;
         const keep = new Set(waypoints.map((w) => waypointKey(l, w)));
         for (const [key, entry] of l.prepared) if (!keep.has(key) && entry.maps !== l.maps) l.prepared.delete(key);
-        for (const w of waypoints) prepare(l, { width: w.width, height: w.height, radius: w.radius, outline: w.outline, dpr: w.dpr ?? motionDpr, appearance: l.options.appearance, ...materialMapOptions(l.options) }, Boolean(w.resting));
+        // Give the visible destination first place in the GPU and encoder
+        // queues. A tall settings panel must not wait behind every smaller
+        // intermediate map before it can begin revealing its content.
+        const geometry = (w: LensWaypoint): MapGeometry => ({ width: w.width, height: w.height, radius: w.radius, outline: w.outline, dpr: w.dpr ?? motionDpr, appearance: l.options.appearance, ...materialMapOptions(l.options) });
+        const destination = waypoints.at(-1);
+        if (destination) void prepare(l, geometry(destination), Boolean(destination.resting)).then(() => {
+          if (disposed || !lenses.has(l) || l.path !== waypoints) return;
+          for (const w of waypoints.slice(0, -1)) void prepare(l, geometry(w), Boolean(w.resting));
+        });
       }
       const draw = animated.draw;
       if (!draw) return;
@@ -819,27 +848,31 @@ export function createGlassScene(
         appearance: l.options.appearance,
         ...materialMapOptions(l.options),
       };
+      const geometryKey = JSON.stringify(g);
+      if (geometryKey !== l.measuredGeometryKey) {
+        if (l.measuredGeometryKey !== undefined) l.resized = now;
+        l.measuredGeometryKey = geometryKey;
+      }
+      const resizing = radius === "capsule" && now - (l.resized ?? 0) < 500;
+      if (resizing) busy = true;
       // A capsule stretched unevenly keeps round ends in its content clip too.
       if (radius === "capsule" && !outline && Math.abs(w / width - h / height) > 0.004) {
         const points = shapePolygon(w, h, "capsule").map(([px, py]): ShapePoint => [px * width / w, py * height / h]);
         setClip(l, polygonClip(points));
         l.geometryKey = undefined;
-        request(l, g, true);
+        request(l, g, true, !resizing);
         return;
       }
-      const geometryKey = JSON.stringify(g);
       if (geometryKey !== l.geometryKey) {
-        // A first measurement is not a resize: start with the exact map.
-        if (l.geometryKey !== undefined) l.resized = now;
         l.geometryKey = geometryKey;
         setClip(l, outline ? polygonClip(outline) : shapeClip(width, height, radius));
         setRadius(l, `${typeof radius === "number" ? Math.min(radius, width/2, height/2) : Math.min(width,height)/2}px`);
       }
       // A capsule whose size is changing reuses one sliced map at every width;
       // at rest it uses an exact map, which draws with a quarter of the images.
-      const resizing = radius === "capsule" && now - (l.resized ?? 0) < 500;
-      if (resizing) busy = true;
-      request(l, g, resizing);
+      // A spring passes through hundreds of unique sizes. Keep those maps
+      // in memory, then persist only the final full-density resting shape.
+      request(l, g, resizing, !resizing);
     });
     foregrounds.forEach((target) => {
       const box = target.element.getBoundingClientRect();
@@ -891,7 +924,7 @@ export function createGlassScene(
       validateMaterial(options);
       options = { ...options, radius: options.radius ?? options.cornerRadius };
       cornerOptions(options.radius ?? 8);
-      const lens: Lens = { serial: ++lensSerial, element, options, resolveShape: options.concentric ? createConcentricResolver(element, typeof options.concentric === "object" ? options.concentric.inset : undefined, options.radius ?? 8) : undefined, releaseShape: registerShapeContainer(element, options.radius ?? 8), clip: element.style.clipPath, borderRadius: element.style.borderRadius, x: 0, y: 0, w: 0, h: 0, opacity: 1, animators: [], prepared: new Map(), preparing: new Set() };
+      const lens: Lens = { serial: ++lensSerial, element, options, resolveShape: options.concentric ? createConcentricResolver(element, typeof options.concentric === "object" ? options.concentric.inset : undefined, options.radius ?? 8) : undefined, releaseShape: registerShapeContainer(element, options.radius ?? 8), clip: element.style.clipPath, borderRadius: element.style.borderRadius, x: 0, y: 0, w: 0, h: 0, opacity: 1, animators: [], prepared: new Map(), preparing: new Map() };
       const motion = () => resolveMotion(options.motion);
       // Container-relative outlines follow their parent; they do not travel.
       if ((options.morphFrom || options.fluid) && !options.concentric)
@@ -964,6 +997,8 @@ export function createGlassScene(
       animators.forEach((animator) => animator.dispose());
       animators.clear();
       disposed = true;
+      if (previousScene === null) root.removeAttribute("data-lg-scene");
+      else root.setAttribute("data-lg-scene", previousScene);
       ticker.dispose();
       if (content) releaseContent(content);
       for (const element of foregroundStyles.keys()) restoreForeground(element);

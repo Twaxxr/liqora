@@ -23,10 +23,11 @@ function fixture({ vertical = false, rtl = false, motion = "full", interactive =
   vertical?: boolean; rtl?: boolean; motion?: GlassMotion; interactive?: boolean; scale?: number;
 } = {}) {
   const view = events(), input = events();
+  const reads = { list: 0, tabs: 0, query: 0 };
   const list = { ...input, offsetWidth: vertical ? 32 : 158, offsetHeight: vertical ? 158 : 32,
     getAttribute: (key: string) => key === "aria-orientation" ? vertical ? "vertical" : "horizontal" : null,
-    dataset: {}, getBoundingClientRect: () => ({ left: 100, top: 50, width: (vertical ? 32 : 158) * scale, height: (vertical ? 158 : 32) * scale }),
-    querySelectorAll: () => tabs,
+    dataset: {}, getBoundingClientRect: () => { reads.list++; return { left: 100, top: 50, width: (vertical ? 32 : 158) * scale, height: (vertical ? 158 : 32) * scale }; },
+    querySelectorAll: () => { reads.query++; return tabs; },
     contains: (node: object) => tabs.some((tab) => tab === node),
   } as unknown as HTMLElement;
   const layer = { parentElement: list };
@@ -36,8 +37,8 @@ function fixture({ vertical = false, rtl = false, motion = "full", interactive =
     const pos = rtl ? 155 - previous - length : 3 + previous;
     return { parentElement: layer, offsetLeft: vertical ? 0 : pos - 3, offsetTop: vertical ? pos - 3 : 0,
       offsetWidth: vertical ? 26 : length, offsetHeight: vertical ? length : 26, disabled: false, clicks: 0,
-      getBoundingClientRect: () => ({ left: 100 + (vertical ? 3 : pos) * scale, top: 50 + (vertical ? pos : 3) * scale,
-        width: (vertical ? 26 : length) * scale, height: (vertical ? length : 26) * scale }),
+      getBoundingClientRect: () => { reads.tabs++; return { left: 100 + (vertical ? 3 : pos) * scale, top: 50 + (vertical ? pos : 3) * scale,
+        width: (vertical ? 26 : length) * scale, height: (vertical ? length : 26) * scale }; },
       matches() { return this.disabled; },
       closest: (selector: string) => selector === '[role="tablist"]' ? list : tabs[i],
       getAttribute: (key: string) => key === "aria-selected" ? String(selected === i) : null,
@@ -55,13 +56,26 @@ function fixture({ vertical = false, rtl = false, motion = "full", interactive =
   const animator = attachSelectionLens(indicator, () => motion, interactive);
   const frames = (count = 1) => { let busy: boolean | void; for (let i = 0; i < count; i++) busy = animator.frame(time += 1000 / 60); return busy; };
   frames();
-  return { input, view, tabs, animator, style, dataset, frames,
+  return { input, view, tabs, animator, style, dataset, frames, reads,
     writes: () => styleWrites,
     force: (value: boolean) => { forceActive = value; },
     select: (value: number) => { selected = value; }, selected: () => selected,
     pointer: (at: number, target = tabs[0]) => ({ target, clientX: 100 + (vertical ? 16 : at) * scale, clientY: 50 + (vertical ? at : 16) * scale }),
   };
 }
+
+test("dragging samples the list and each tab once per frame", () => {
+  const f = fixture();
+  try {
+    f.input.send("pointerdown", f.pointer(26));
+    f.view.send("pointermove", f.pointer(129));
+    for (let i = 0; i < 30; i++) {
+      Object.assign(f.reads, { list: 0, tabs: 0, query: 0 });
+      f.frames();
+      expect(f.reads).toEqual({ list: 1, tabs: 3, query: 1 });
+    }
+  } finally { f.animator.dispose(); }
+});
 
 test("the lifted capsule keeps its center and stays inside the bar without selecting", () => {
   const f = fixture();

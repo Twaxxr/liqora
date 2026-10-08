@@ -17,24 +17,41 @@ export interface ForegroundLens {
 
 /** Compare sibling stacking branches before falling back to document order. */
 export function comparePaintOrder(a: HTMLElement, b: HTMLElement): number {
-  if (a === b) return 0;
+  return paintOrderComparator()(a, b);
+}
+/** Sample each ancestor's stacking style once while sorting a scene. */
+export function paintOrderComparator(): (a: HTMLElement, b: HTMLElement) => number {
+  const paths = new WeakMap<HTMLElement, HTMLElement[]>();
+  const stacking = new WeakMap<HTMLElement, number | undefined>();
+  const sampled = new WeakSet<HTMLElement>();
   const path = (element: HTMLElement) => {
+    const cached = paths.get(element);
+    if (cached) return cached;
     const result: HTMLElement[] = [];
     for (let node: HTMLElement | null = element; node; node = node.parentElement) result.unshift(node);
+    paths.set(element, result);
     return result;
   };
-  const ap = path(a), bp = path(b);
-  let i = 0;
-  while (ap[i] && ap[i] === bp[i]) i++;
-  const z = (nodes: HTMLElement[]) => {
-    for (const node of nodes.slice(i)) {
-      const style = getComputedStyle(node);
-      if (style.zIndex !== "auto" && style.position !== "static") return Number(style.zIndex) || 0;
-    }
-    return 0;
+  return (a, b) => {
+    if (a === b) return 0;
+    const ap = path(a), bp = path(b);
+    let i = 0;
+    while (ap[i] && ap[i] === bp[i]) i++;
+    const z = (nodes: HTMLElement[]) => {
+      for (const node of nodes.slice(i)) {
+        if (!sampled.has(node)) {
+          const style = getComputedStyle(node);
+          stacking.set(node, style.zIndex !== "auto" && style.position !== "static" ? Number(style.zIndex) || 0 : undefined);
+          sampled.add(node);
+        }
+        const value = stacking.get(node);
+        if (value !== undefined) return value;
+      }
+      return 0;
+    };
+    const delta = z(ap) - z(bp);
+    return delta || (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
   };
-  const delta = z(ap) - z(bp);
-  return delta || (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
 }
 
 export function overlaps(a: Pick<ForegroundLens, "x" | "y" | "w" | "h">, b: Pick<ForegroundLens, "x" | "y" | "w" | "h">): boolean {

@@ -7,7 +7,9 @@ test("explicit zero overrides material presets and normalized aliases", () => {
   expect(materialBlur({ blurAmount: 0.25 })).toBe(6);
   expect(materialRefraction({ refraction: 24, refractionLevel: 0 })).toBe(0);
   expect(materialRefraction({ refractionLevel: 0.5 }, 20)).toBe(10);
-  expect(materialDispersion({ refraction: 24, chromAberration: 0.05 })).toBeCloseTo(1.2);
+  expect(materialRefraction({ refraction: 24 })).toBeCloseTo(10.8);
+  expect(materialRefraction({ refraction: 24, refractionLevel: 1 })).toBe(24);
+  expect(materialDispersion({ refraction: 24, chromAberration: 0.05 })).toBeCloseTo(0.54);
   expect(materialDispersion({ chromaticAberration: 0, chromAberration: 1 })).toBe(0);
   expect(materialSaturation({ saturation: 0, saturationAdjustment: 1 })).toBe(0);
   expect(materialSaturation({ saturationAdjustment: -1 })).toBe(0);

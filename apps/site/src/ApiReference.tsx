@@ -10,7 +10,7 @@ function materialRows(kind: ExampleKind): readonly Row[] {
     ["appearance", '"light" | "dark"', "Inherits from the scene."],
     ["radius", 'number | "capsule" | "circle"', `Continuous corner radius. Default: ${radius}.`],
     ["refraction", "number", thumb ? `Pressed thumb displacement in CSS pixels. Default: ${kind === "slider" ? 24 : 20}.` : kind === "tabs" ? "Optical travel in CSS pixels. Bar default: 24; selection default: 12. Supplied values apply to both unless indicatorProps overrides them." : "Displacement in CSS pixels. Default: 60; nested surfaces limit it to their inset."],
-    ["refractionLevel", "number", "Refraction multiplier. Default: 1; 0 removes optical travel."],
+    ["refractionLevel", "number", "Refraction multiplier. Default: 0.45; 0 removes optical travel."],
     ["blur / blurAmount", "number", thumb ? "Pressed blur in CSS pixels. Slider default: 0; switch default: 0.2. blurAmount is normalized 0–1 (0–24px); explicit blur takes precedence." : "Blur in CSS pixels, or normalized 0–1 (0–24px). blur takes precedence. Omit for material tuning."],
     ["saturation", "number", "Override color saturation. 1 keeps the input saturation; 0 is grayscale. Omit to use the material tuning."],
     ["specularOpacity", "number", kind === "tabs" ? "Specular highlight opacity from 0 to 1. Bar default: 0.5; selection default: 0.65." : thumb ? "Specular highlight opacity from 0 to 1. Slider default: 0.4; switch default: 0.5." : "Specular highlight opacity from 0 to 1. Omit to use the material response."],

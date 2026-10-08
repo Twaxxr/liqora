@@ -59,6 +59,7 @@ function peek(g: MapGeometry, sliceCapsule: boolean): MaterialMaps | undefined {
   const stored = peekStoredMaps(`${version}|${key}`);
   if (!stored) return undefined;
   const maps = assemble(g, sliceCapsule, stored.planes, stored.duration);
+  storedMaps.add(maps);
   claimFirstPaint(`${version}|${key}`, stored);
   lastUse.set(maps, performance.now());
   settled.set(key, maps);
@@ -71,6 +72,19 @@ function peek(g: MapGeometry, sliceCapsule: boolean): MaterialMaps | undefined {
 const keyOf = (g: MapGeometry, sliceCapsule: boolean) =>
   JSON.stringify([g.width, g.height, g.radius, g.dpr, g.appearance, g.outline, sliceCapsule, materialMapOptions(g)]);
 const names: MapPlane[] = ["displacement", "mask", "highlight", "outline"];
+const storedMaps = new WeakSet<MaterialMaps>();
+/** A transient map can later become the resting shape. Promote it to the
+ * persistent cache without baking, encoding or decoding it again. */
+export function persistMaterialMaps(g: MapGeometry, maps: MaterialMaps): void {
+  if (storedMaps.has(maps)) return;
+  const capsule = Boolean(maps.capsule);
+  const geometry = capsule ? capsuleMapGeometry(g) ?? g : g;
+  const key = `${version}|${keyOf(geometry, capsule)}`;
+  const stored = { planes: names.map((name) => [maps[name], ...(maps.capsule?.planes[name] ?? [])]), duration: maps.duration };
+  storedMaps.add(maps);
+  saveStoredMaps(key, stored);
+  claimFirstPaint(key, stored);
+}
 function assemble(g: MapGeometry, sliceCapsule: boolean, encoded: string[][], duration: number): MaterialMaps {
   const planes = Object.fromEntries(names.map((name, index) => [name, encoded[index]!.slice(1)])) as Record<MapPlane, [string, string, string]>;
   return {
@@ -85,19 +99,22 @@ function assemble(g: MapGeometry, sliceCapsule: boolean, encoded: string[][], du
 function materialMaps(g: MapGeometry, sliceCapsule = false, persist = true): Promise<MaterialMaps> {
   const key = keyOf(g, sliceCapsule);
   const cached = cache.get(key);
-  if (cached) return cached;
+  if (cached) return persist ? cached.then((maps) => { persistMaterialMaps(g, maps); return maps; }) : cached;
   const stored = `${version}|${key}`;
   const result = (persist ? loadStoredMaps(stored) : Promise.resolve(peekStoredMaps(stored)))
     .then(async (found) => {
-      if (found) { claimFirstPaint(stored, found); return assemble(g, sliceCapsule, found.planes, found.duration); }
+      if (found) {
+        claimFirstPaint(stored, found);
+        const maps = assemble(g, sliceCapsule, found.planes, found.duration);
+        storedMaps.add(maps);
+        return maps;
+      }
       const renderer = await getMaterialRenderer();
       const { width, height, pixels, duration } = await renderer.render(g);
       const encoded = await encodeMaterialPixels(pixels, width, height, sliceCapsule ? Math.round((g.height + 2) * mapScale(g)) : undefined);
-      if (persist) {
-        saveStoredMaps(stored, { planes: encoded, duration });
-        claimFirstPaint(stored, { planes: encoded, duration });
-      }
-      return assemble(g, sliceCapsule, encoded, duration);
+      const maps = assemble(g, sliceCapsule, encoded, duration);
+      if (persist) persistMaterialMaps(g, maps);
+      return maps;
     })
     .then(async (maps) => {
       // Only hand out maps whose image is decoded: switching a filter to it

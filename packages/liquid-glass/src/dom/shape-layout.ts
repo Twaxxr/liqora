@@ -8,17 +8,17 @@ import type { Ticker } from "./ticker.js";
 
 /** A measurement step: whether anything changed, and the writes to apply once
  * every job has measured, so reads and writes never interleave. */
-type Job = () => { changed: boolean; write?: () => void } | undefined;
-const jobs = new Set<Job>();
-let ticker: Ticker | undefined;
-let contentGroups = new Map<HTMLElement, { left: number; right: number }>();
-function tick() {
-  contentGroups = new Map();
+type ContentGroups = Map<HTMLElement, { left: number; right: number }>;
+type Job = (contentGroups: ContentGroups) => { changed: boolean; write?: () => void } | undefined;
+interface Scope { jobs: Set<Job>; ticker: Ticker; observed: Map<Element, number> }
+const scopes = new Map<Node, Scope>();
+function tick(jobs: Set<Job>) {
+  const contentGroups: ContentGroups = new Map();
   const writes: Array<(() => void) | undefined> = [];
   let changed = false;
   for (const job of jobs) {
     try {
-      const result = job();
+      const result = job(contentGroups);
       if (result?.changed) changed = true;
       writes.push(result?.write);
     }
@@ -26,24 +26,47 @@ function tick() {
   }
   return { active: changed, write: () => { for (const write of writes) write?.(); } };
 }
-/** All shape jobs share one demand-driven loop: it wakes on input, scroll,
- * resize, and DOM mutation anywhere in the document, and sleeps once the
- * measured geometry stops changing. */
+/** Shape jobs share a loop per scene, and all loops share the ticker's read
+ * and write phases. Input in one example never remeasures every other one;
+ * offscreen scenes retain their contours without doing layout work. */
 function schedule(job: Job, ...observed: Element[]) {
-  jobs.add(job);
-  ticker ??= createTicker(tick, { root: document });
-  for (const element of observed) ticker.observe(element);
-  ticker.wake();
-  return () => {
-    jobs.delete(job);
-    for (const element of observed) ticker?.unobserve(element);
-    if (!jobs.size) { ticker?.dispose(); ticker = undefined; }
+  const root = observed[0]?.closest("[data-lg-scene], .lg-scene") ?? document;
+  let scope = scopes.get(root);
+  if (!scope) {
+    const jobs = new Set<Job>();
+    const ticker = createTicker(() => tick(jobs), { root, ignore: (target) => {
+      const element = target.nodeType === 1 ? target as Element : target.parentElement;
+      return Boolean(element?.closest("[data-lg-internal]"));
+    } });
+    scope = { jobs, ticker, observed: new Map() };
+    scopes.set(root, scope);
+  }
+  const current = scope, elements = new Set<Element>();
+  const observe = (element: Element) => {
+    if (elements.has(element)) return;
+    elements.add(element);
+    const count = current.observed.get(element) ?? 0;
+    current.observed.set(element, count + 1);
+    if (!count) current.ticker.observe(element);
   };
+  current.jobs.add(job);
+  for (const element of observed) observe(element);
+  current.ticker.wake();
+  const stop = () => {
+    current.jobs.delete(job);
+    for (const element of elements) {
+      const count = current.observed.get(element)! - 1;
+      if (count) current.observed.set(element, count);
+      else { current.observed.delete(element); current.ticker.unobserve(element); }
+    }
+    if (!current.jobs.size) { current.ticker.dispose(); scopes.delete(root); }
+  };
+  stop.observe = observe;
+  return stop;
 }
 /** Wake the shared loop, for callers that learn of a container change first. */
 export function wakeShapeLayout(element?: Element) {
-  if (element) ticker?.observe(element);
-  ticker?.wake();
+  for (const [root, scope] of scopes) if (!element || root.contains(element) || element.contains(root)) scope.ticker.wake();
 }
 export function shapeContainerAttributes(radius: GlassRadius) {
   cornerOptions(radius);
@@ -92,10 +115,10 @@ export function observeConcentricShape(element: HTMLElement, options: Concentric
   let content: {left:number;right:number}|undefined;
   let pointsForContainer: ShapePoint[]=[];
   let observedParent: HTMLElement | undefined;
-  const stop=schedule(() => {
+  const stop=schedule((contentGroups) => {
     const parent=findContainer(element,container);
     if(!parent || !element.isConnected) return;
-    if(parent!==observedParent) { observedParent=parent; wakeShapeLayout(parent); }
+    if(parent!==observedParent) { observedParent=parent; stop.observe(parent); }
     const shape=geometry(parent), box=getLayoutSize(element), pr=parent.getBoundingClientRect(), er=element.getBoundingClientRect();
     if(!shape.width || !shape.height || !box.width || !box.height || !pr.width || !pr.height) return;
     const x=(er.left-pr.left)*shape.width/pr.width,y=(er.top-pr.top)*shape.height/pr.height;
@@ -140,7 +163,7 @@ export function observeCornerPlacement(element: HTMLElement, options: CornerOpti
   const stop=schedule(() => {
     const parent=findContainer(element,container);
     if(!parent || !element.isConnected) return;
-    if(parent!==observedParent) { observedParent=parent; wakeShapeLayout(parent); }
+    if(parent!==observedParent) { observedParent=parent; stop.observe(parent); }
     const shape=geometry(parent),size=getLayoutSize(element),pr=parent.getBoundingClientRect();
     if(!shape.width||!shape.height||!size.width||!size.height||!pr.width||!pr.height) return;
     const fixed=getComputedStyle(element).position==="fixed";

@@ -16,9 +16,9 @@ const imports = {
   menu: "GlassButton, GlassMenu, GlassMenuTrigger, GlassMenuContent, GlassMenuItem",
 }
 const snippets = {
-  slider: `<GlassSlider aria-label="Volume" defaultValue={50} refractionLevel={1} blur={0} specularSaturation={7} specularOpacity={0.4} chromAberration={0.05} onValueCommitted={(value) => console.log(value)} />`,
+  slider: `<GlassSlider aria-label="Volume" defaultValue={50} refractionLevel={0.45} blur={0} specularSaturation={7} specularOpacity={0.4} chromAberration={0.05} onValueCommitted={(value) => console.log(value)} />`,
   switch: `<label style={{ display: "flex", alignItems: "center", gap: 12 }}>
-  Notifications <GlassSwitch defaultChecked name="notifications" refractionLevel={1} blur={0.2} specularOpacity={0.5} specularSaturation={6} />
+  Notifications <GlassSwitch defaultChecked name="notifications" refractionLevel={0.45} blur={0.2} specularOpacity={0.5} specularSaturation={6} />
 </label>`,
   "progressive-blur": "",
   surface: `<GlassSurface interactive radius={28} style={{ width: 280, padding: 20 }}>

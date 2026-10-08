@@ -11,6 +11,7 @@ let serial = 0;
 export function createMapWarmer(root: HTMLElement) {
   const id = `lg-warm-${++serial}`;
   const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("data-lg-internal", "");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("width", "0");
   svg.setAttribute("height", "0");
@@ -21,6 +22,7 @@ export function createMapWarmer(root: HTMLElement) {
     filter.setAttribute(name, value);
   svg.append(filter);
   const probe = document.createElement("div");
+  probe.setAttribute("data-lg-internal", "");
   probe.setAttribute("aria-hidden", "true");
   Object.assign(probe.style, { position: "absolute", left: "0", top: "0", width: "1px", height: "1px", opacity: "0.004", pointerEvents: "none", filter: `url("#${id}")` });
   root.append(svg, probe);

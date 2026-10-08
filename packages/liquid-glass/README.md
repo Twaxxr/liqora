@@ -61,7 +61,7 @@ Set defaults on `GlassScene`; individual surfaces can override them. Menu popups
 | `material` | `"clear"` | `"clear"` or `"regular"`. |
 | `appearance` | `"light"` | `"light"` or `"dark"`. |
 | `radius` | Component-specific | Continuous corner radius in CSS pixels, `"capsule"`, or `"circle"`. Generic surfaces default to 8px. |
-| `refraction` / `refractionLevel` | `60` / `1` | Displacement in CSS pixels and its multiplier. Nested surfaces limit their default travel to the parent inset. |
+| `refraction` / `refractionLevel` | `60` / `0.45` | Displacement in CSS pixels and its multiplier. Nested surfaces limit their default travel to the parent inset. |
 | `blur` / `blurAmount` | Material-tuned | Blur standard deviation in CSS pixels, or normalized `0` to `1` (`0` to `24px`). `blur` takes precedence; explicit `0` disables blur. |
 | `saturation` | Material-tuned | Optional saturation override. `1` preserves source saturation; `0` makes the transmitted color grayscale. |
 | `specularOpacity` | Material response | Opacity multiplier `0` to `1` for the highlight. |
@@ -84,7 +84,7 @@ Set defaults on `GlassScene`; individual surfaces can override them. Menu popups
 | `morph` | By context | `"become"` replaces its source; `"detach"` separates from it. |
 | `motion` | `"full"` | `"full"`, `"reduced"`, or `"none"`; inherited from the scene. |
 
-Slider and switch thumbs show their Clear glass lens while pressed. Sliders use a convex bezel with `refraction={24}`, `refractionLevel={1}`, `specularOpacity={0.4}`, `specularSaturation={7}`, and `blur={0}`. Switches use an outer lip and concave inner bezel with values `20`, `1`, `0.5`, `6`, and `0.2` respectively. Blur is in CSS pixels. Sliders use a 6px bezel and cross-section radius; switches use 10px. Both use `chromAberration={0.05}`. Their track is an explicit live DOM layer, so its sharp edges refract and split into color fringes inside the glass border. Tracks default to blue for sliders and green for checked switches; `tint` overrides the color.
+Slider and switch thumbs show their Clear glass lens while pressed. Sliders use a convex bezel with `refraction={24}`, `refractionLevel={0.45}`, `specularOpacity={0.4}`, `specularSaturation={7}`, and `blur={0}`. Switches use an outer lip and concave inner bezel with values `20`, `0.45`, `0.5`, `6`, and `0.2` respectively. Blur is in CSS pixels. Sliders use a 6px bezel and cross-section radius; switches use 10px. Both use `chromAberration={0.05}`. Their track is an explicit live DOM layer, so its sharp edges refract and split into color fringes inside the glass border. Tracks default to blue for sliders and green for checked switches; `tint` overrides the color.
 
 Set `forceActive` on either control to keep its pressed lens visible without changing its value or checked state. Set `refractionLevel={0}` to remove displacement, `chromAberration={0}` to disable normalized color separation, or `specularOpacity={0}` to remove the specular rim. `specularSaturation` changes the rim only; use `saturation` or `saturationAdjustment` for the entire transmitted image. These units differ from libraries whose `refraction` and `saturation` props are normalized: use `refractionLevel` and `saturationAdjustment` when copying those settings.
 
@@ -131,12 +131,12 @@ In a toolbar, compose the trigger with `GlassToolbarButton render={<GlassMenuTri
 <GlassTabs aria-label="Navigation" defaultValue="home"
   items={[{ value: "home", label: "Home" }, { value: "library", label: "Library" }]} />
 
-<GlassSlider aria-label="Volume" defaultValue={50} refractionLevel={1} blur={0}
+<GlassSlider aria-label="Volume" defaultValue={50} refractionLevel={0.45} blur={0}
   specularSaturation={7} specularOpacity={0.4} chromAberration={0.05}
   onValueCommitted={(value) => console.log(value)} />
 <GlassSlider ticks aria-label="Intensity" min={0} max={100} step={25} />
 <label>Notifications <GlassSwitch name="notifications" defaultChecked
-  refractionLevel={1} specularOpacity={0.5} specularSaturation={6} blur={0.2} /></label>
+  refractionLevel={0.45} specularOpacity={0.5} specularSaturation={6} blur={0.2} /></label>
 ```
 
 Tabs select the first enabled item unless `defaultValue` is set. Use `value` and `onValueChange` for controlled selection. The compact bar has a 3px inset and a clear selection capsule over the containing material. The selection refracts live labels at its rim only while travelling between tabs or following a drag. Labels return to sharp rendering when it settles, including during a stationary press or `forceActive` preview. The glass continues to refract the backdrop at rest. The bar uses a lip bezel with 24px optical travel and an 8px bezel; the selection uses a convex bezel with 12px travel and a 6px bezel. `size="default"`, `"sm"`, and `"lg"` give 32px, 28px, and 36px bar heights.
@@ -145,7 +145,7 @@ Optical props on `GlassTabs` or `GlassTabsList` also apply to the selection. Use
 
 ```tsx
 <GlassTabs material="regular" appearance="dark" aria-label="Music"
-  refractionLevel={1} specularOpacity={0.5} chromAberration={0.03}
+  refractionLevel={0.45} specularOpacity={0.5} chromAberration={0.03}
   indicatorProps={{ refraction: 12, specularOpacity: 0.65, chromAberration: 0.04 }}
   items={[
     { value: "listen", label: "Listen" },

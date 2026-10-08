@@ -28,22 +28,30 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
   const lift = new Spring(0, springs.press);
   let ready = false, previous = 0, moved = false, suppress = false, keyboard = false;
   let drag: { id: number; start: number; grab: number; client: number } | null = null;
+  let measuredList: DOMRect | undefined, measuredTabs: HTMLElement[] | undefined;
+  const measuredBoxes = new Map<HTMLElement, { pos: number; cross: number; length: number; thickness: number }>();
+  const invalidate = () => { measuredList = undefined; measuredTabs = undefined; measuredBoxes.clear(); };
+  const listBox = () => measuredList ??= list.getBoundingClientRect();
   const vertical = () => list.getAttribute("aria-orientation") === "vertical" || list.dataset.orientation === "vertical";
-  const tabs = () => [...list.querySelectorAll<HTMLElement>('[role="tab"]')].filter((tab) => tab.parentElement === list || tab.closest('[role="tablist"]') === list);
+  const tabs = () => measuredTabs ??= [...list.querySelectorAll<HTMLElement>('[role="tab"]')].filter((tab) => tab.parentElement === list || tab.closest('[role="tablist"]') === list);
   // Filtered label layers establish their own containing block. Measure in
   // the list's layout space rather than assuming each tab's offset parent.
   const box = (tab: HTMLElement) => {
-    const parent = list.getBoundingClientRect(), rect = tab.getBoundingClientRect();
+    const cached = measuredBoxes.get(tab);
+    if (cached) return cached;
+    const parent = listBox(), rect = tab.getBoundingClientRect();
     const sx = list.offsetWidth / (parent.width || 1), sy = list.offsetHeight / (parent.height || 1);
     const x = (rect.left - parent.left) * sx, y = (rect.top - parent.top) * sy;
     const width = rect.width * sx, height = rect.height * sy;
-    return vertical() ? { pos: y, cross: x, length: height, thickness: width }
+    const result = vertical() ? { pos: y, cross: x, length: height, thickness: width }
       : { pos: x, cross: y, length: width, thickness: height };
+    measuredBoxes.set(tab, result);
+    return result;
   };
   const client = (event: PointerEvent) => vertical() ? event.clientY : event.clientX;
   /** Pointer coordinate in the list's layout space along the tab axis. */
   const local = (value: number) => {
-    const rect = list.getBoundingClientRect();
+    const rect = listBox();
     return vertical() ? (value - rect.top) * list.offsetHeight / (rect.height || 1)
       : (value - rect.left) * list.offsetWidth / (rect.width || 1);
   };
@@ -56,6 +64,7 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
     if (!interactive || event.button !== 0 || motion() === "none") return;
     const tab = (event.target as Element | null)?.closest<HTMLElement>('[role="tab"]');
     if (!tab || tab.closest('[role="tablist"]') !== list || !enabled(tab)) return;
+    invalidate();
     const at = local(client(event));
     const active = tab.getAttribute("aria-selected") === "true";
     // Grab the lens where it was touched; pressing another tab pulls it there.
@@ -79,6 +88,7 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
   }
   function up(event: PointerEvent) {
     if (!drag || event.pointerId !== drag.id) return;
+    invalidate();
     const choice = nearest(pos.value + length.value / 2);
     end();
     if (moved && choice) {
@@ -121,6 +131,7 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
   return {
     frame(now, quiet) {
       if (quiet) { previous = now; return true; }
+      invalidate();
       const dt = previous ? Math.min((now - previous) / 1000, 1 / 20) : 1 / 60;
       previous = now;
       const level = motion();

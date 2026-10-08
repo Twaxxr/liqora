@@ -110,6 +110,14 @@ try {
   cases.push({ width: 32, height: 32, radius: "circle", dpr: 2 }, { width: 80, height: 60, radius: 0, dpr: 1 });
   const outline = concentricOutline(insetShape({ width: 176, height: 190, radius: 40 }, 4), { x: 4, y: 4, width: 168, height: 28 }, 8);
   for (const dpr of [1, 2]) cases.push({ width: 168, height: 28, radius: 8, dpr, outline, bezelProfile: "lip", distortion: .1 });
+  // The selection crosses short, changing capsules; submenus have long
+  // straight sides. Cover both paths, including fractional sizes and DPR.
+  for (const dpr of [1, 1.25, 2]) for (const radius of [0, 28, 80]) {
+    cases.push({ width: 320, height: 740, radius, dpr, appearance: "dark", bezelProfile: "lip", specular: .4, edgeHighlight: .2, fresnel: 1, distortion: .15 });
+  }
+  for (const [width, height] of [[46, 26], [50, 30], [54.317, 27.613], [57.839, 25.579], [30, 54], [102.375, 61.281]]) {
+    cases.push({ width, height, radius: "capsule", dpr: 2, bezelProfile: "convex", bezelWidth: 6, zRadius: 6 });
+  }
   let bytes = 0, changed = 0, maxError = 0;
   for (const geometry of cases) {
     const [expected] = await original([geometry]);
@@ -125,15 +133,25 @@ try {
   assert.equal(changed, 0, `Map regression: ${changed} bytes differ, max error ${maxError}`);
   console.log(JSON.stringify({ comparison: { geometries: cases.length, bytes, changed, maxError } }));
   if (!benchmark) {
-    const batch = cases.slice(0, 12);
-    const expected = await original(batch);
-    const actual = await Promise.all(batch.map((g) => renderer.render(g)));
-    for (let i = 0; i < batch.length; i++) assert.deepEqual(actual[i].pixels, expected[i]);
-    console.log(JSON.stringify({ batchedComparison: { geometries: batch.length, changed: 0 } }));
+    for (const [name, batch] of [
+      ["controls", cases.slice(0, 12)],
+      ["submenus-and-tabs", [
+        { width: 320, height: 740, radius: 28, dpr: 1, appearance: "dark" },
+        ...cases.slice(-6),
+        { width: 300, height: 690, radius: 28, dpr: 1, appearance: "light", distortion: .15 },
+      ]],
+    ]) {
+      const expected = await original(batch);
+      const actual = await Promise.all(batch.map((g) => renderer.render(g)));
+      for (let i = 0; i < batch.length; i++) assert.deepEqual(actual[i].pixels, expected[i]);
+      console.log(JSON.stringify({ batchedComparison: { name, geometries: batch.length, changed: 0 } }));
+    }
   } else for (const [name, geometries] of [
     ["slider", [cases[10]]],
     ["switch", [cases[11]]],
     ["large-surface", [{ width: 960, height: 540, radius: 40, dpr: 2, appearance: "dark" }]],
+    ["tab-selection", [{ width: 54.317, height: 27.613, radius: "capsule", dpr: 2, bezelProfile: "convex", bezelWidth: 6, zRadius: 6 }]],
+    ["configuration-submenu", [{ width: 320, height: 740, radius: 28, dpr: 2, appearance: "dark" }]],
     ["control-batch", cases.slice(0, 12)],
   ]) {
     const before = [], after = [], beforeWall = [], afterWall = [];

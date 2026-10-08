@@ -304,7 +304,7 @@ function MaterialControls({ value, onChange, kind, material, layer = "bar", inhe
   const controls = [
     [thumb ? "blur" : "blurAmount", thumb ? "Blur level (px)" : "Blur amount", 0, thumb ? 40 : 1, thumb ? 0.1 : 0.01, thumb ? kind === "switch" ? 0.2 : 0 : material === "regular" ? 7.33 / 24 : 0],
     ["refraction", "Refraction travel (px)", 0, 120, 0.1, thumb ? (kind === "switch" ? 12 : 16.8) : 60],
-    ["refractionLevel", "Refraction level", 0, 2, 0.01, 1],
+    ["refractionLevel", "Refraction level", 0, 2, 0.01, 0.45],
     ["chromAberration", "Chromatic aberration", 0, 1, 0.01, thumb ? 0.05 : 0],
     ["edgeHighlight", "Edge highlight", 0, 1, 0.01, 0],
     ["specular", "Specular", 0, 1, 0.01, 0],
@@ -397,8 +397,8 @@ const ExamplePreview = memo(function ExamplePreview({
   const [forceActive, setForceActive] = useState(false)
   const forceActiveId = useId()
   const [optics, setOptics] = useState<MaterialOptions>(kind === "slider"
-    ? { refraction: 16.8, refractionLevel: 1, bezelWidth: 20, zRadius: 20, specularOpacity: 0.4, specularSaturation: 7, blur: 0 }
-    : kind === "switch" ? { refraction: 12, refractionLevel: 1, bezelWidth: 20, zRadius: 20, specularOpacity: 0.5, specularSaturation: 6, blur: 0.2 } : {})
+    ? { refraction: 16.8, refractionLevel: 0.45, bezelWidth: 20, zRadius: 20, specularOpacity: 0.4, specularSaturation: 7, blur: 0 }
+    : kind === "switch" ? { refraction: 12, refractionLevel: 0.45, bezelWidth: 20, zRadius: 20, specularOpacity: 0.5, specularSaturation: 6, blur: 0.2 } : {})
   const [tabOptics, setTabOptics] = useState<MaterialOptions>({})
   const [tabLayer, setTabLayer] = useState<"bar" | "selection">("selection")
   const [toolbarVariant, setToolbarVariant] = useState<ToolbarVariant>("normal")

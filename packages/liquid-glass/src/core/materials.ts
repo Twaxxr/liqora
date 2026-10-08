@@ -9,7 +9,7 @@ export interface MaterialOptions {
   /** Follow the nearest shape container; radius controls independent corners. */
   concentric?: boolean | { inset?: number };
   refraction?: number;
-  /** Multiplier for optical travel; 1 keeps refraction at its configured strength. */
+  /** Multiplier for optical travel. Default: 0.45; 1 uses the full configured travel. */
   refractionLevel?: number;
   /** Blur standard deviation in CSS pixels. Takes precedence over blurAmount. */
   blur?: number;
@@ -69,7 +69,7 @@ export function materialBlur(options: MaterialOptions): number {
   return options.blur ?? (options.blurAmount === undefined ? materials[options.material ?? "clear"].blur : options.blurAmount * 24);
 }
 export function materialRefraction(options: MaterialOptions, fallback: number = materials[options.material ?? "clear"].refraction): number {
-  return (options.refraction ?? fallback) * (options.refractionLevel ?? 1);
+  return (options.refraction ?? fallback) * (options.refractionLevel ?? 0.45);
 }
 export function materialDispersion(options: MaterialOptions, travel = materialRefraction(options)): number {
   return options.chromaticAberration ?? (options.chromAberration ?? 0) * travel;

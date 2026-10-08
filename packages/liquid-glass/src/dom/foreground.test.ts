@@ -11,7 +11,7 @@ test("foreground optics use local coordinates and preserve transparent input out
   } as ForegroundLens;
   const filter = foregroundFilter("test", target, [overlay]);
   expect(filter).toContain('x="0.24" y="0.18"');
-  expect(filter).toContain('scale="0.08"');
+  expect(Number(/<feDisplacementMap[^>]*scale="([^"]+)"/.exec(filter)![1])).toBeCloseTo(0.036);
   expect(filter).toContain('slope="0.5"');
   expect(filter).toContain('in="SourceGraphic" in2="f0mask" operator="out"');
   expect(filter).not.toContain("feTile");
@@ -103,7 +103,7 @@ test("paint order respects positioner stacking before DOM order", () => {
 test("foreground optical buffers cover RGB and blur sampling without processing the full target", () => {
   const target = { x: 0, y: 0, w: 1920, h: 1080 } as ForegroundLens;
   const overlay = { x: 800, y: 500, w: 90, h: 60, opacity: 1,
-    options: { refraction: 24, chromAberration: .05, blur: .2, specularSaturation: 7, specularOpacity: .4 },
+    options: { refraction: 24, refractionLevel: 1, chromAberration: .05, blur: .2, specularSaturation: 7, specularOpacity: .4 },
     maps: { mask: "mask", displacement: "map", highlight: "highlight" },
   } as ForegroundLens;
   const markup = foregroundFilter("large", target, [overlay]);

@@ -19,6 +19,8 @@ struct Shape {
   optics: vec4f,
   // Additional edge highlight, specular, Fresnel, stable micro-distortion.
   lighting: vec4f,
+  // Bounds of curved segments between the top and right straight sides.
+  cornerBounds: vec4f,
 }
 struct Batch { count: u32, pad: vec3u, shapes: array<Shape, 32> }
 struct Outline { segments: array<vec4f, 4096> }
@@ -53,19 +55,35 @@ fn shape(s: Shape, point: vec2f) -> vec3f {
   let p = select(point, vec2f(abs(point.x), -abs(point.y)), symmetric) + s.size * 0.5;
   var distance2 = 1e20;
   var delta = vec2f(0.0);
-  var outward = vec2f(0.0, -1.0);
-  for (var i = s.start; i < s.start + s.count; i++) {
-    let segment = outline.segments[i];
-    let edge = segment.zw - segment.xy;
-    let nearest = segment.xy + edge * sat(dot(p-segment.xy, edge) / dot(edge, edge));
-    let v = p - nearest;
-    let d2 = dot(v, v);
-    if (d2 < distance2) {
-      distance2 = d2;
-      delta = v;
-      outward = normalize(vec2f(edge.y, -edge.x));
+  var closestEdge = vec2f(1.0, 0.0);
+  var straight = false;
+  if (s.pad.x != 0u) {
+    for (var end = 0u; end < 2u; end++) {
+      let segment = outline.segments[s.start + select(0u, s.count - 1u, end != 0u)];
+      let edge = segment.zw - segment.xy;
+      let v = p - (segment.xy + edge * sat(dot(p-segment.xy, edge) / dot(edge, edge)));
+      let d2 = dot(v, v);
+      if (d2 < distance2) { distance2 = d2; delta = v; closestEdge = edge; }
+    }
+    let gap = max(max(s.cornerBounds.xy - p, p - s.cornerBounds.zw), vec2f(0.0));
+    straight = dot(gap, gap) > distance2 + 0.001;
+    if (!straight) { distance2 = 1e20; }
+  }
+  if (!straight) {
+    for (var i = s.start; i < s.start + s.count; i++) {
+      let segment = outline.segments[i];
+      let edge = segment.zw - segment.xy;
+      let nearest = segment.xy + edge * sat(dot(p-segment.xy, edge) / dot(edge, edge));
+      let v = p - nearest;
+      let d2 = dot(v, v);
+      if (d2 < distance2) {
+        distance2 = d2;
+        delta = v;
+        closestEdge = edge;
+      }
     }
   }
+  let outward = normalize(vec2f(closestEdge.y, -closestEdge.x));
   let direction = select(-1.0, 1.0, dot(delta, outward) >= 0.0);
   let distance = sqrt(distance2);
   let normal = select(outward, delta * direction / max(distance, 0.00001), distance > 0.00001);
@@ -90,6 +108,23 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
   }
   let local = (vec2f(f32(id.x), f32(y)) + 0.5) / vec2f(s.columns, s.rows);
   let point = local * (s.size + 4.0) - (s.size + 4.0) * 0.5;
+  // Well inside a plain rounded rectangle every optical contribution is
+  // constant. Conservative distances to the sides and corner bounds prove
+  // this before any outline search, powers or directional lighting work.
+  if (s.pad.x != 0u) {
+    let p = vec2f(abs(point.x), -abs(point.y)) + s.size * 0.5;
+    let gap = max(max(s.cornerBounds.xy - p, p - s.cornerBounds.zw), vec2f(0.0));
+    let margin = max(s.optics.x, 4.5) + 2.0;
+    let inside = p.x <= s.cornerBounds.x || p.y >= s.cornerBounds.w;
+    if (inside && min(p.y, s.size.x - p.x) > margin && dot(gap, gap) > margin * margin) {
+      let ripple = vec2f(sin(point.x * 0.19 + point.y * 0.13), sin(point.y * 0.21 - point.x * 0.11)) * s.lighting.w * 0.025;
+      textureStore(atlas, vec2u(id.x, u32(s.row) + y), vec4f(clamp(vec2f(0.5) + ripple, vec2f(0.0), vec2f(1.0)), 0.5, 1.0));
+      textureStore(atlas, vec2u(id.x, u32(s.row) + y + u32(s.rows)), vec4f(1.0));
+      textureStore(atlas, vec2u(id.x, u32(s.row) + y + 2u * u32(s.rows)), vec4f(vec3f(mix(1.0, 0.82, s.dark)), 0.0));
+      textureStore(atlas, vec2u(id.x, u32(s.row) + y + 3u * u32(s.rows)), vec4f(0.0));
+      return;
+    }
+  }
   let field = shape(s, point);
   let d = field.x; let n = field.yz;
   let aa = max(abs(n.x) + abs(n.y), 1.0) / s.dpr;
