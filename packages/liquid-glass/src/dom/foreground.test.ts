@@ -43,6 +43,26 @@ test("foreground track receives independent RGB travel and specular saturation",
   expect(filter).toContain('in="SourceGraphic" in2="f0mask" operator="out"');
 });
 
+test("a pill between tab labels refracts the shared text layer only inside its capsule", () => {
+  const target = { x: 103, y: 203, w: 152, h: 26 } as ForegroundLens;
+  const pill = { x: 129, y: 203, w: 50, h: 26, opacity: 1,
+    options: { material: "clear", refraction: 12, refractionLevel: 1, blurAmount: 0, chromAberration: 0.04 },
+    maps: { mask: "mask", displacement: "map" },
+  } as ForegroundLens;
+  const first = foregroundFilter("tabs", target, [pill]);
+  expect(first).toContain(`x="${24 / 152}" y="${-2 / 26}"`);
+  expect(first).toContain(`scale="${2 * 12 / 152}"`);
+  expect(first).toContain('in="SourceGraphic" in2="f0mask" operator="out"');
+  expect(first).toContain('in="f0refracted" in2="f0mask" operator="in"');
+  const second = foregroundFilter("tabs", target, [{ ...pill, x: 143 }]);
+  expect(second).toContain(`x="${38 / 152}"`);
+  expect(second).not.toEqual(first);
+  const off = foregroundFilter("tabs", target, [{ ...pill, options: { ...pill.options, refractionLevel: 0 } }]);
+  expect(off).toContain('scale="0"');
+  expect(off).not.toContain('redShift');
+  expect(first).not.toContain('feTile');
+});
+
 test("paint order respects positioner stacking before DOM order", () => {
   const originalStyle = globalThis.getComputedStyle;
   const originalNode = globalThis.Node;

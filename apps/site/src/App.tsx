@@ -398,7 +398,7 @@ function ExamplePreview({
   const forceActiveId = useId()
   const [optics, setOptics] = useState<MaterialOptions>(kind === "slider" ? { refraction: 60, bezelWidth: 20, zRadius: 20 } : {})
   const [tabOptics, setTabOptics] = useState<MaterialOptions>({})
-  const [tabLayer, setTabLayer] = useState<"bar" | "selection">("bar")
+  const [tabLayer, setTabLayer] = useState<"bar" | "selection">("selection")
   const [toolbarVariant, setToolbarVariant] = useState<ToolbarVariant>("normal")
   const [surfaceDrag, setSurfaceDrag] = useState<"move" | "anchor">("move")
   const [progressive, setProgressive] = useState<ProgressiveOptions>(defaultProgressiveOptions)

@@ -73,6 +73,17 @@
   gap: 0;
   touch-action: pan-y;
 }
+:where(.lg-tabs-label-layer) {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: inherit;
+  align-items: inherit;
+  justify-content: inherit;
+  gap: inherit;
+}
 :where(.lg-tab) {
   display: grid;
   align-items: center;
@@ -192,6 +203,7 @@
 
 :where(.lg-tab-indicator) {
   position: absolute;
+  z-index: 1;
   left: var(--active-tab-left);
   top: var(--active-tab-top);
   width: var(--active-tab-width);

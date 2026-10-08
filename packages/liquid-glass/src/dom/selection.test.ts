@@ -19,22 +19,25 @@ function events() {
   };
 }
 
-function fixture({ vertical = false, rtl = false, motion = "full", interactive = true }: {
-  vertical?: boolean; rtl?: boolean; motion?: GlassMotion; interactive?: boolean;
+function fixture({ vertical = false, rtl = false, motion = "full", interactive = true, scale = 1 }: {
+  vertical?: boolean; rtl?: boolean; motion?: GlassMotion; interactive?: boolean; scale?: number;
 } = {}) {
   const view = events(), input = events();
   const list = { ...input, offsetWidth: vertical ? 32 : 158, offsetHeight: vertical ? 158 : 32,
     getAttribute: (key: string) => key === "aria-orientation" ? vertical ? "vertical" : "horizontal" : null,
-    dataset: {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: vertical ? 32 : 158, height: vertical ? 158 : 32 }),
+    dataset: {}, getBoundingClientRect: () => ({ left: 100, top: 50, width: (vertical ? 32 : 158) * scale, height: (vertical ? 158 : 32) * scale }),
     querySelectorAll: () => tabs,
     contains: (node: object) => tabs.some((tab) => tab === node),
   } as unknown as HTMLElement;
+  const layer = { parentElement: list };
   let selected = 0, forceActive = false, time = 0;
   const tabs = [46, 54, 52].map((length, i, lengths) => {
     const previous = lengths.slice(0, i).reduce((sum, size) => sum + size, 0);
     const pos = rtl ? 155 - previous - length : 3 + previous;
-    return { parentElement: list, offsetLeft: vertical ? 3 : pos, offsetTop: vertical ? pos : 3,
+    return { parentElement: layer, offsetLeft: vertical ? 0 : pos - 3, offsetTop: vertical ? pos - 3 : 0,
       offsetWidth: vertical ? 26 : length, offsetHeight: vertical ? length : 26, disabled: false, clicks: 0,
+      getBoundingClientRect: () => ({ left: 100 + (vertical ? 3 : pos) * scale, top: 50 + (vertical ? pos : 3) * scale,
+        width: (vertical ? 26 : length) * scale, height: (vertical ? length : 26) * scale }),
       matches() { return this.disabled; },
       closest: (selector: string) => selector === '[role="tablist"]' ? list : tabs[i],
       getAttribute: (key: string) => key === "aria-selected" ? String(selected === i) : null,
@@ -52,7 +55,7 @@ function fixture({ vertical = false, rtl = false, motion = "full", interactive =
   return { input, view, tabs, animator, style, dataset, frames,
     force: (value: boolean) => { forceActive = value; },
     select: (value: number) => { selected = value; }, selected: () => selected,
-    pointer: (at: number, target = tabs[0]) => ({ target, clientX: vertical ? 16 : at, clientY: vertical ? at : 16 }),
+    pointer: (at: number, target = tabs[0]) => ({ target, clientX: 100 + (vertical ? 16 : at) * scale, clientY: 50 + (vertical ? at : 16) * scale }),
   };
 }
 
@@ -82,8 +85,8 @@ test("the lifted capsule keeps its center and stays inside the bar without selec
   expect(f.input.count() + f.view.count()).toBe(0);
 });
 
-test("dragging commits once, skips disabled tabs and works with reduced motion, RTL and vertical lists", () => {
-  for (const options of [{}, { motion: "reduced" as const }, { rtl: true }, { vertical: true }]) {
+test("nested label layers preserve lens position and drag in scaled, reduced-motion, RTL and vertical lists", () => {
+  for (const options of [{}, { scale: 1.25 }, { motion: "reduced" as const }, { rtl: true }, { vertical: true }]) {
     const f = fixture(options);
     try {
       f.tabs[1]!.disabled = true;

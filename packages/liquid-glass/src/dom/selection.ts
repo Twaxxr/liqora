@@ -18,9 +18,16 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
   let drag: { id: number; start: number; grab: number; client: number } | null = null;
   const vertical = () => list.getAttribute("aria-orientation") === "vertical" || list.dataset.orientation === "vertical";
   const tabs = () => [...list.querySelectorAll<HTMLElement>('[role="tab"]')].filter((tab) => tab.parentElement === list || tab.closest('[role="tablist"]') === list);
-  const box = (tab: HTMLElement) => vertical()
-    ? { pos: tab.offsetTop, cross: tab.offsetLeft, length: tab.offsetHeight, thickness: tab.offsetWidth }
-    : { pos: tab.offsetLeft, cross: tab.offsetTop, length: tab.offsetWidth, thickness: tab.offsetHeight };
+  // Filtered label layers establish their own containing block. Measure in
+  // the list's layout space rather than assuming each tab's offset parent.
+  const box = (tab: HTMLElement) => {
+    const parent = list.getBoundingClientRect(), rect = tab.getBoundingClientRect();
+    const sx = list.offsetWidth / (parent.width || 1), sy = list.offsetHeight / (parent.height || 1);
+    const x = (rect.left - parent.left) * sx, y = (rect.top - parent.top) * sy;
+    const width = rect.width * sx, height = rect.height * sy;
+    return vertical() ? { pos: y, cross: x, length: height, thickness: width }
+      : { pos: x, cross: y, length: width, thickness: height };
+  };
   const client = (event: PointerEvent) => vertical() ? event.clientY : event.clientX;
   /** Pointer coordinate in the list's layout space along the tab axis. */
   const local = (value: number) => {

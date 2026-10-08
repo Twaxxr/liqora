@@ -179,7 +179,7 @@ try {
   // Compact tab bezels must bend only the edge, keeping a flat center behind
   // the labels. Check both resting layers and the lifted selection at 1x/2x
   // in each appearance, using the production WGSL and real GPU readbacks.
-  let tabReadbacks = 0;
+  let tabReadbacks = 0, tabGlyphChecks = 0;
   for (const dpr of [1, 2]) for (const appearance of ["light", "dark"]) {
     const layers = [
       { width: 158, height: 32, bezelProfile: "lip", bezelWidth: 8, zRadius: 8, edgeHighlight: 0.02, fresnel: 0.1 },
@@ -205,8 +205,28 @@ try {
         throw new Error(`Tab layer ${i} has no refracting/lit bezel (${appearance}, ${dpr}x)`);
       tabReadbacks++;
     });
+    // Model a sharp vertical glyph stroke in the live label layer using the
+    // SVG displacement equation and the GPU's actual capsule field. A fold
+    // samples that stroke twice inside the pill, separated by a clear gap.
+    // This is an optical readback check, not a DOM/browser screenshot.
+    const pill = maps[1], cy = Math.floor(pill.height / 2);
+    const strokes = (level) => {
+      let runs = 0, previous = false;
+      for (let x = 2 * dpr; x < pill.width / 2; x++) {
+        const index = (cy * pill.width + x) * 4;
+        const sourceX = (x + 0.5) / dpr - 2 + (pill.pixels[index] / 255 * 2 - 1) * 12 * level;
+        const inside = pill.pixels[(pill.height * pill.width * 4) + index + 3] > 0;
+        const lit = inside && sourceX >= 6 && sourceX < 8;
+        if (lit && !previous) runs++;
+        previous = lit;
+      }
+      return runs;
+    };
+    const bent = strokes(1), flat = strokes(0);
+    if (bent < 2 || flat !== 1) throw new Error(`Tab pill does not repeat a label stroke inside its bezel: ${bent} bent, ${flat} flat (${appearance}, ${dpr}x)`);
+    tabGlyphChecks++;
   }
-  console.log({ tabReadbacks, tabBezel: "refracting rim, clear center, bounded coverage in both appearances at 1x/2x" });
+  console.log({ tabReadbacks, tabGlyphChecks, tabBezel: "refracting rim, clear center, repeated label stroke inside the pill; level 0 removes the repeat" });
   if (process.env.LIQORA_GPU_ARTIFACT_DIR) {
     const directory = process.env.LIQORA_GPU_ARTIFACT_DIR;
     mkdirSync(directory, { recursive: true });

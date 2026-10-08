@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { useMergedRef } from "./merged-ref.js";
 import type {
   CSSProperties,
@@ -566,7 +567,8 @@ export interface GlassTabsListProps
 }
 const TabsMaterialContext = createContext<{
   optics: MaterialOptions; motion?: GlassMotion; interactive?: boolean; forceActive?: boolean;
-}>({ optics: {} });
+  list: HTMLElement | null;
+}>({ optics: {}, list: null });
 export function GlassTabsList({
   material,
   appearance,
@@ -589,6 +591,8 @@ export function GlassTabsList({
   const [optics, props] = splitMaterialProps(rest);
   radius ??= optics.cornerRadius ?? "capsule";
   const scene = useScene();
+  const [list, setList] = useState<HTMLElement | null>(null);
+  const labels = useGlassForeground();
   const shared = {
     ...optics,
     material: material ?? scene.material,
@@ -601,8 +605,9 @@ export function GlassTabsList({
   };
   const resolved = tabBarMaterial(shared);
   return (
-    <TabsMaterialContext.Provider value={{ optics: shared, motion, interactive, forceActive }}>
+    <TabsMaterialContext.Provider value={{ optics: shared, motion, interactive, forceActive, list }}>
       <GlassSurface
+        ref={setList}
         {...resolved}
         radius={radius}
         concentric={concentric}
@@ -613,7 +618,7 @@ export function GlassTabsList({
         data-size={size}
         render={<Tabs.List activateOnFocus {...props} />}
       >
-        {children}
+        <div ref={labels} className="lg-tabs-label-layer">{children}</div>
       </GlassSurface>
     </TabsMaterialContext.Provider>
   );
@@ -657,7 +662,7 @@ export function GlassTabsIndicator({
   const lens = useCallback((element: HTMLElement | null) => {
     if (element) return controller.addAnimator(attachSelectionLens(element, () => resolveMotion(level), interactive));
   }, [controller, level, interactive]);
-  return (
+  const surface = (
     <GlassSurface
       {...resolved}
       radius={radius}
@@ -670,6 +675,10 @@ export function GlassTabsIndicator({
       render={<Tabs.Indicator {...props} />}
     />
   );
+  // The live labels are one filter source. Keep the lens beside that source,
+  // so neither containment nor a tab's clip can suppress its refracted text.
+  // The inline first render also preserves the indicator's hydration markup.
+  return inherited.list ? createPortal(surface, inherited.list) : surface;
 }
 export function GlassTabsTrigger({
   children,

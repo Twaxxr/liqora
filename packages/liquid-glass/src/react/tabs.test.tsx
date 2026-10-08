@@ -39,6 +39,8 @@ test("forceActive and indicator props preserve controlled tabs and stay out of s
   expect(html).toContain('data-glass-force-active=""');
   expect(html).toContain('role="tablist"');
   expect(html).toContain('aria-label="Music"');
+  expect(html).toContain('class="lg-tabs-label-layer"');
+  expect(html.match(/class="lg-tab-label"/g)).toHaveLength(2);
   expect(html).toMatch(/<button[^>]+disabled=""[^>]*>.*Listen/);
   expect(html).toMatch(/<button[^>]+aria-selected="true"[^>]*>.*Library/);
   for (const key of ["forceActive", "indicatorProps", "refractionLevel", "blurAmount"]) expect(html.toLowerCase()).not.toContain(`${key.toLowerCase()}=`);
