@@ -16,9 +16,9 @@ const imports = {
   menu: "GlassButton, GlassMenu, GlassMenuTrigger, GlassMenuContent, GlassMenuItem",
 }
 const snippets = {
-  slider: `<GlassSlider aria-label="Volume" defaultValue={50} refractionLevel={1} specularSaturation={7} specularOpacity={0.4} chromAberration={0.05} onValueCommitted={(value) => console.log(value)} />`,
+  slider: `<GlassSlider aria-label="Volume" defaultValue={50} refractionLevel={1} blur={0} specularSaturation={7} specularOpacity={0.4} chromAberration={0.05} onValueCommitted={(value) => console.log(value)} />`,
   switch: `<label style={{ display: "flex", alignItems: "center", gap: 12 }}>
-  Notifications <GlassSwitch defaultChecked name="notifications" />
+  Notifications <GlassSwitch defaultChecked name="notifications" refractionLevel={1} blur={0.2} specularOpacity={0.5} specularSaturation={6} />
 </label>`,
   "progressive-blur": "",
   surface: `<GlassSurface interactive radius={28} style={{ width: 280, padding: 20 }}>
@@ -117,10 +117,30 @@ export function usageCode(
   const attributes = entries.map(([key, value]) => typeof value === "string" ? `${key}=${JSON.stringify(value)}` : `${key}={${JSON.stringify(value)}}`).join(" ")
   const configured = attributes ? snippet.replace(/<(GlassSurface|GlassButton|GlassToolbar|GlassTabs|GlassSlider|GlassSwitch|GlassMenuContent|GlassMenuSubmenuContent)(?=[\s>])/g, `<$1 ${attributes}`) : snippet
   const tintedSnippet = tint ? configured.replace(/<(GlassSurface|GlassButton|GlassToolbar|GlassTabs|GlassSlider|GlassSwitch|GlassMenuContent|GlassMenuSubmenuContent)(?=[\s>])/g, `<$1 tint="${tint}"`) : configured
+  const controlStyle = kind === "slider" ? `{
+    width: 330,
+    maxWidth: "100%",
+    "--lg-slider-control-height": "60px",
+    "--lg-slider-track-size": "14px",
+    "--lg-slider-thumb-width": "54px",
+    "--lg-slider-thumb-height": "36px",
+    "--lg-slider-grow-x": "18px",
+    "--lg-slider-grow-y": "12px",
+    "--lg-slider-tick-offset": "48px",
+  }` : kind === "switch" ? `{
+    "--lg-switch-width": "160px",
+    "--lg-switch-height": "67px",
+    "--lg-switch-thumb-width": "94.9px",
+    "--lg-switch-thumb-height": "59.8px",
+    "--lg-switch-inset": "3.6px",
+    "--lg-switch-grow-x": "18.25px",
+    "--lg-switch-grow-y": "11.5px",${tint ? "" : '\n    "--lg-accent": "rgba(59, 191, 78, 0.93333)",'}
+  }` : ""
+  const previewSnippet = controlStyle ? tintedSnippet.replace(/<(GlassSlider|GlassSwitch)(?=[\s>])/, `<$1 style={${controlStyle} as CSSProperties}`) : tintedSnippet
   return `import {
 ${["GlassScene", "GlassContent", ...`${kind === "menu" && menuOptions.trigger === "toolbar" ? imports.menu.replace("GlassButton, ", "") : imports[kind]}${extraImports}${submenuImports}`.split(", ")].map((name) => `  ${name},`).join("\n")}
 } from "@glass-sdk/liquid-glass";
-import "@glass-sdk/liquid-glass/styles.css";
+${controlStyle ? 'import type { CSSProperties } from "react";\n' : ""}import "@glass-sdk/liquid-glass/styles.css";
 
 <GlassScene material="${material}" appearance="${appearance}" style={{ height: 400 }}>
   <GlassContent>
@@ -128,7 +148,7 @@ import "@glass-sdk/liquid-glass/styles.css";
       style={{ width: "100%", height: "100%", objectFit: "cover" }} />
   </GlassContent>
   <div style={{ position: "absolute", inset: 0, display: "grid", placeContent: "center", gap: 24 }}>
-${tintedSnippet
+${previewSnippet
   .split("\n")
   .map((line) => `    ${line}`)
   .join("\n")}

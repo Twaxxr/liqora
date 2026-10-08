@@ -9,6 +9,8 @@ export interface ForegroundLens {
   element: HTMLElement;
   x: number; y: number; w: number; h: number;
   opacity: number;
+  /** Contribution to live foreground content; backdrop optics stay unchanged. */
+  foregroundOpacity?: number;
   options: MaterialOptions;
   maps?: MaterialMaps;
 }
@@ -48,11 +50,11 @@ export function foregroundFilter(id: string, target: ForegroundLens, overlays: r
   const parts: string[] = [];
   let input = "SourceGraphic";
   for (const [i, lens] of overlays.entries()) {
-    if (!lens.maps) continue;
+    if (!lens.maps || lens.foregroundOpacity === 0) continue;
     const p = `f${i}`, x = lens.x - target.x - 2, y = lens.y - target.y - 2;
     const image = (plane: MapPlane, result: string) => mapImage(lens.maps!, plane, result, x, y, lens.w + 4, lens.h + 4, width, height);
     parts.push(image("mask", `${p}rawmask`), image("displacement", `${p}rawmap`));
-    parts.push(`<feComponentTransfer in="${p}rawmask" result="${p}mask"><feFuncA type="linear" slope="${lens.opacity}"/></feComponentTransfer>`);
+    parts.push(`<feComponentTransfer in="${p}rawmask" result="${p}mask"><feFuncA type="linear" slope="${lens.opacity * (lens.foregroundOpacity ?? 1)}"/></feComponentTransfer>`);
     parts.push(`<feFlood flood-color="rgb(128,128,128)" result="${p}neutral"/><feComposite in="${p}rawmap" in2="${p}neutral" operator="over" result="${p}map"/>`);
     const blur = materialBlur(lens.options);
     parts.push(`<feGaussianBlur in="${input}" stdDeviation="${blur / width} ${blur / height}" result="${p}blur"/>`);

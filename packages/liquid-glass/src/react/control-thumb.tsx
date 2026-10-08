@@ -6,6 +6,7 @@ import { attachNativeControlMotion } from "../dom/control-motion.js";
 import type { ControlMotionOptions } from "../dom/control-motion.js";
 import { GlassSurface, useGlassMotion } from "./index.js";
 import type { MaterialOptions } from "../core/materials.js";
+import { controlThumbMaterial } from "./control-materials.js";
 
 type Phase = "idle" | "pressed" | "settling";
 /** Keep optics mounted until the measured release envelope finishes. */
@@ -37,15 +38,7 @@ export function ControlThumb({ pressed, options, tag = "div", ref, children, mot
     "data-press-phase": phase,
     children: <>
       {children}
-      {phase !== "idle" && <GlassSurface {...options} material={options.material ?? "clear"}
-        refraction={options.refraction ?? (isSwitch ? 20 : 24)}
-        bezelProfile={options.bezelProfile ?? (isSwitch ? "lip" : "convex")}
-        bezelWidth={options.bezelWidth ?? (isSwitch ? 10 : 6)}
-        zRadius={options.zRadius ?? (isSwitch ? 10 : 6)}
-        specularOpacity={options.specularOpacity ?? (isSwitch ? 0.5 : 0.4)}
-        specularSaturation={options.specularSaturation ?? (isSwitch ? 6 : 7)}
-        chromAberration={options.chromAberration ?? 0.05}
-        blurAmount={options.blurAmount ?? (isSwitch ? 0.2 / 24 : 0)}
+      {phase !== "idle" && <GlassSurface {...controlThumbMaterial(isSwitch ? "switch" : "slider", options)}
         radius={options.radius ?? "capsule"} render={<span />} className="lg-control-lens" aria-hidden="true" />}
       <GlassShape radius={options.radius ?? "capsule"} render={<span />} className="lg-control-face" aria-hidden="true" />
     </>,

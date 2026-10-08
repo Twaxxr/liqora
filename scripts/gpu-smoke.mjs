@@ -176,6 +176,39 @@ try {
     if (repeatedRows < 2 || clearRows < 1) throw new Error(`No separated track image in ${width}x${height} bezel: ${repeatedRows} repeated, ${clearRows} clear`);
     console.log({ controlSize: [width, height], repeatedRows, clearRows });
   }
+  // Reference-size pressed controls keep a clear center with the calibrated
+  // travel. The switch's lip should repeat the green track at its perimeter,
+  // separated from the central track image by a transparent band.
+  let referenceControlReadbacks = 0, switchTrackChecks = 0;
+  for (const dpr of [1, 2]) for (const appearance of ["light", "dark"]) {
+    for (const geometry of [
+      { width: 90, height: 60, bezelProfile: "convex", bezelWidth: 20, zRadius: 20 },
+      { width: 131.4, height: 82.8, bezelProfile: "lip", bezelWidth: 20, zRadius: 20 },
+    ]) {
+      const map = await renderer.render({ ...geometry, radius: "capsule", dpr, appearance });
+      const cx = Math.floor(map.width / 2), cy = Math.floor(map.height / 2);
+      const read = (plane, x, y, channel) => map.pixels[((plane * map.height + y) * map.width + x) * 4 + channel];
+      if (Math.abs(read(0, cx, cy, 0) - 127.5) > 0.5 || Math.abs(read(0, cx, cy, 1) - 127.5) > 0.5 || read(2, cx, cy, 3) !== 0)
+        throw new Error(`Reference ${geometry.bezelProfile} control has no clear center (${appearance}, ${dpr}x)`);
+      if (geometry.bezelProfile === "lip") {
+        const greenBands = (level) => {
+          let bands = 0, previous = false;
+          for (let y = 2 * dpr; y < cy; y++) {
+            const sourceY = (y + 0.5) / dpr - 2 - geometry.height / 2 + (read(0, cx, y, 1) / 255 * 2 - 1) * 12 * level;
+            const green = read(1, cx, y, 3) > 127 && Math.abs(sourceY) < 67 / 2;
+            if (green && !previous) bands++;
+            previous = green;
+          }
+          return bands;
+        };
+        if (greenBands(1) < 2 || greenBands(0) !== 1)
+          throw new Error(`Reference switch has no separated track image at its lip (${appearance}, ${dpr}x)`);
+        switchTrackChecks++;
+      }
+      referenceControlReadbacks++;
+    }
+  }
+  console.log({ referenceControlReadbacks, switchTrackChecks });
   // Compact tab bezels must bend only the edge, keeping a flat center behind
   // the labels. Check both resting layers and the lifted selection at 1x/2x
   // in each appearance, using the production WGSL and real GPU readbacks.

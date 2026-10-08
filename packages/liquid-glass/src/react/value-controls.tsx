@@ -55,7 +55,7 @@ export function GlassSlider({
   }, [sliderPressed]);
   return <Slider.Root<number>
     defaultValue={min} {...props} ref={mergedRef} min={min} max={max} step={step}
-    className={`lg-slider ${className}`} style={{ "--lg-accent": tint ?? "#8e8e93", ...style } as CSSProperties}
+    className={`lg-slider ${className}`} style={{ "--lg-accent": tint ?? "#0377f7", ...style } as CSSProperties}
     data-ticks={ticks ? "" : undefined}>
     <Slider.Control className="lg-slider-control"
       onPointerDownCapture={(event) => { if (!event.defaultPrevented && event.button === 0) setSliderPressed(true); }}
@@ -94,7 +94,7 @@ export function GlassSwitch({ material, appearance, tint, refraction, saturation
   const pointer = useRef<{ id: number; x: number; start: number; current: number; left: number; width: number; rtl: boolean; oppositeHalf: boolean; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
   return <Switch.Root {...props} ref={mergedRef} nativeButton={false} className={`lg-switch ${className}`}
-    style={{ "--lg-accent": tint ?? "#8e8e93", ...style } as CSSProperties}
+    style={{ "--lg-accent": tint ?? "#3bbf4e", ...style } as CSSProperties}
     render={(rootProps, state) => <span {...rootProps} role="switch" aria-checked={state.checked} tabIndex={rootProps.tabIndex ?? 0}
       style={{ ...rootProps.style, "--lg-switch-position": position ?? (state.checked ? 1 : 0) } as CSSProperties}
       data-presentation-checked={position === null ? undefined : position === 1 ? "true" : "false"}

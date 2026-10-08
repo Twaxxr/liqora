@@ -63,6 +63,25 @@ test("a pill between tab labels refracts the shared text layer only inside its c
   expect(first).not.toContain('feTile');
 });
 
+test("resting selection lenses leave foreground glyphs untouched without changing other optics", () => {
+  const labels = { x: 0, y: 0, w: 152, h: 26 } as ForegroundLens;
+  const pill = { x: 0, y: 0, w: 46, h: 26, opacity: 1, foregroundOpacity: 0,
+    options: { refraction: 12, chromAberration: 0.04, specularOpacity: 0.65, specularSaturation: 2 },
+    maps: { mask: "mask", displacement: "map", highlight: "light" },
+  } as ForegroundLens;
+  const still = foregroundFilter("labels", labels, [pill]);
+  expect(still).not.toContain("feDisplacementMap");
+  expect(still).not.toContain("feColorMatrix");
+  expect(still).not.toContain("feGaussianBlur");
+  const moving = foregroundFilter("labels", labels, [{ ...pill, foregroundOpacity: 1 }]);
+  expect(moving).toContain("feDisplacementMap");
+  expect(moving).toContain('type="saturate" values="2"');
+  const otherLens = foregroundFilter("labels", labels, [pill, { ...pill, foregroundOpacity: undefined }]);
+  expect(otherLens).toContain('in="SourceGraphic"');
+  expect(otherLens).toContain('result="f1result"');
+  expect(otherLens).not.toContain('result="f0result"');
+});
+
 test("paint order respects positioner stacking before DOM order", () => {
   const originalStyle = globalThis.getComputedStyle;
   const originalNode = globalThis.Node;

@@ -11,6 +11,12 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
   if (!list) return { frame() {}, dispose() {} };
   const view = indicator.ownerDocument.defaultView!;
   const saved = { left: indicator.style.left, top: indicator.style.top, width: indicator.style.width, height: indicator.style.height, scale: indicator.style.scale };
+  const savedRefraction = indicator.dataset.glassForegroundRefraction;
+  const refractionState = (travelling: boolean) => {
+    const state = travelling ? "moving" : "resting";
+    if (indicator.dataset.glassForegroundRefraction !== state) indicator.dataset.glassForegroundRefraction = state;
+  };
+  refractionState(false);
   const pos = new Spring(0, springs.layout), cross = new Spring(0, springs.layout);
   const length = new Spring(0, springs.layout), thickness = new Spring(0, springs.layout);
   const lift = new Spring(0, springs.press);
@@ -113,7 +119,10 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
       previous = now;
       const level = motion();
       const active = tabs().find((tab) => tab.getAttribute("aria-selected") === "true");
-      if (!active) return false;
+      if (!active) { refractionState(false); return false; }
+      const wasReady = ready;
+      const layout = [pos, cross, length, thickness];
+      const before = layout.map((spring) => spring.value);
       const target = box(active);
       const held = Boolean(drag) || keyboard || indicator.hasAttribute("data-glass-force-active");
       lift.configure(held ? springs.press : springs.release).target = held ? 1 : 0;
@@ -142,7 +151,12 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
         for (const spring of [pos, cross, length, thickness]) spring.configure(springs.layout);
         pos.target = target.pos; cross.target = target.cross; length.target = target.length; thickness.target = target.thickness;
       }
-      for (const spring of [pos, cross, length, thickness]) spring.step(dt);
+      for (const spring of layout) spring.step(dt);
+      // A stationary press only lifts the glass. Text bends during actual
+      // travel, including the settling spring after a selection or drag.
+      const travelling = wasReady && (level === "full" || level === "reduced" && drag && moved) &&
+        layout.some((spring, i) => !spring.settled || Math.abs(spring.value - before[i]!) > 0.01);
+      refractionState(Boolean(travelling));
       // Lift the selection within the bar's inset. Velocity stretches it along
       // its path, but neither the lift nor spring overshoot can escape the bar.
       const stretch = level === "full" ? Math.min(0.2, Math.abs(pos.velocity) * 0.00035) * (drag ? 1 : 0.6) : 0;
@@ -173,6 +187,8 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
       view.removeEventListener("blur", blur);
       Object.assign(indicator.style, saved);
       delete indicator.dataset.glassLifted;
+      if (savedRefraction === undefined) delete indicator.dataset.glassForegroundRefraction;
+      else indicator.dataset.glassForegroundRefraction = savedRefraction;
     },
   };
 }

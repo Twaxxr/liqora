@@ -302,8 +302,8 @@ function MaterialControls({ value, onChange, kind, material, layer = "bar", inhe
     : { blurAmount: material === "regular" ? 7.33 / 24 : 0, refraction: 24, chromAberration: 0.03, edgeHighlight: 0.02,
       specularOpacity: 0.5, specularSaturation: 1.5, fresnel: 0.1, cornerRadius: 16, zRadius: 8, bezelWidth: 8 }
   const controls = [
-    ["blurAmount", "Blur amount", 0, 1, 0.01, value.blurAmount ?? (thumb ? (kind === "switch" ? 0.2 / 24 : 0) : material === "regular" ? 7.33 / 24 : 0)],
-    ["refraction", "Refraction travel (px)", 0, 120, 1, thumb ? (kind === "switch" ? 20 : 60) : 60],
+    [thumb ? "blur" : "blurAmount", thumb ? "Blur level (px)" : "Blur amount", 0, thumb ? 40 : 1, thumb ? 0.1 : 0.01, thumb ? kind === "switch" ? 0.2 : 0 : material === "regular" ? 7.33 / 24 : 0],
+    ["refraction", "Refraction travel (px)", 0, 120, 0.1, thumb ? (kind === "switch" ? 12 : 16.8) : 60],
     ["refractionLevel", "Refraction level", 0, 2, 0.01, 1],
     ["chromAberration", "Chromatic aberration", 0, 1, 0.01, thumb ? 0.05 : 0],
     ["edgeHighlight", "Edge highlight", 0, 1, 0.01, 0],
@@ -312,9 +312,9 @@ function MaterialControls({ value, onChange, kind, material, layer = "bar", inhe
     ["specularSaturation", "Specular saturation", 0, 10, 0.1, thumb ? (kind === "switch" ? 6 : 7) : 1],
     ["fresnel", "Fresnel", 0, 1, 0.01, 0],
     ["distortion", "Distortion", 0, 1, 0.01, 0],
-    ["cornerRadius", "Corner radius", 0, 100, 1, kind === "surface" ? 38 : kind === "menu" ? 28 : kind === "switch" ? 15.5 : kind === "slider" ? 30 : 20],
-    ["zRadius", "Z-radius", 1, 100, 1, thumb ? 10 : 20],
-    ["bezelWidth", "Bezel width", 1, 100, 1, thumb ? 10 : 20],
+    ["cornerRadius", "Corner radius", 0, 100, 1, kind === "surface" ? 38 : kind === "menu" ? 28 : kind === "switch" ? 41.4 : kind === "slider" ? 30 : 20],
+    ["zRadius", "Z-radius", 1, 100, 1, 20],
+    ["bezelWidth", "Bezel width", 1, 100, 1, 20],
     ["opacity", "Opacity", 0, 1, 0.01, 1],
     ["saturationAdjustment", "Saturation", -1, 1, 0.01, 0],
     ["brightness", "Brightness", -0.5, 0.5, 0.01, 0],
@@ -396,7 +396,9 @@ function ExamplePreview({
   const activeControl = thumb || kind === "tabs"
   const [forceActive, setForceActive] = useState(false)
   const forceActiveId = useId()
-  const [optics, setOptics] = useState<MaterialOptions>(kind === "slider" ? { refraction: 60, bezelWidth: 20, zRadius: 20 } : {})
+  const [optics, setOptics] = useState<MaterialOptions>(kind === "slider"
+    ? { refraction: 16.8, refractionLevel: 1, bezelWidth: 20, zRadius: 20, specularOpacity: 0.4, specularSaturation: 7, blur: 0 }
+    : kind === "switch" ? { refraction: 12, refractionLevel: 1, bezelWidth: 20, zRadius: 20, specularOpacity: 0.5, specularSaturation: 6, blur: 0.2 } : {})
   const [tabOptics, setTabOptics] = useState<MaterialOptions>({})
   const [tabLayer, setTabLayer] = useState<"bar" | "selection">("selection")
   const [toolbarVariant, setToolbarVariant] = useState<ToolbarVariant>("normal")

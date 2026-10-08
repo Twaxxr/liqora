@@ -123,3 +123,42 @@ test("keyboard lift releases on focus loss and disabled or noninteractive tabs d
     expect(inert.dataset.glassLifted).toBeUndefined();
   } finally { inert.animator.dispose(); }
 });
+
+test("tab labels refract during travel and return to sharp rendering while held still", () => {
+  for (const options of [{}, { rtl: true }, { vertical: true }, { scale: 1.25 }]) {
+    const f = fixture(options);
+    try {
+      expect(f.dataset.glassForegroundRefraction).toBe("resting");
+      f.force(true); f.frames(100);
+      expect(f.dataset.glassForegroundRefraction).toBe("resting");
+      f.select(1); f.frames();
+      expect(f.dataset.glassForegroundRefraction).toBe("moving");
+      f.frames(100);
+      expect(f.dataset.glassForegroundRefraction).toBe("resting");
+      const start = options.rtl ? 82 : 76, end = options.rtl ? 29 : 129;
+      f.input.send("pointerdown", f.pointer(start, f.tabs[1]));
+      f.frames(30);
+      expect(f.dataset.glassForegroundRefraction).toBe("resting");
+      f.view.send("pointermove", f.pointer(end)); f.frames();
+      expect(f.dataset.glassForegroundRefraction).toBe("moving");
+      f.frames(100);
+      expect(f.dataset.glassForegroundRefraction).toBe("resting");
+      f.view.send("pointercancel", f.pointer(end)); f.frames();
+      expect(f.dataset.glassForegroundRefraction).toBe("moving");
+      f.frames(100);
+      expect(f.dataset.glassForegroundRefraction).toBe("resting");
+    } finally { f.animator.dispose(); }
+    expect(f.dataset.glassForegroundRefraction).toBeUndefined();
+  }
+});
+
+test("instant selection changes do not flash refracted text", () => {
+  for (const motion of ["none", "reduced"] as const) {
+    const f = fixture({ motion });
+    try {
+      f.select(2); f.frames();
+      expect(f.dataset.glassForegroundRefraction).toBe("resting");
+      expect(parseFloat(f.style.left)).toBe(103);
+    } finally { f.animator.dispose(); }
+  }
+});

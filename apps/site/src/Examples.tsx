@@ -237,8 +237,8 @@ export function Example({
           {(example === "slider" || example === "switch") && (
             <div className={`value-control-example value-control-example-${example}`}>
               {example === "switch"
-                ? <GlassSwitch {...options} forceActive={forceActive} material="clear" aria-label="Switch" checked={checked} onCheckedChange={setChecked} />
-                : <GlassSlider {...options} forceActive={forceActive} material="clear" aria-label="Slider" value={sliderValue} onValueChange={setValue} step={sliderStepped ? 25 : 0.1} ticks={sliderStepped} style={{ "--lg-accent": tint ?? "#0a84ff" } as CSSProperties} />}
+                ? <GlassSwitch {...options} forceActive={forceActive} material="clear" aria-label="Switch" checked={checked} onCheckedChange={setChecked} style={{ "--lg-accent": tint ?? "rgba(59, 191, 78, 0.93333)" } as CSSProperties} />
+                : <GlassSlider {...options} forceActive={forceActive} material="clear" aria-label="Slider" value={sliderValue} onValueChange={setValue} step={sliderStepped ? 25 : 0.1} ticks={sliderStepped} />}
             </div>
           )}
           {example === "buttons" && (

@@ -115,6 +115,7 @@ interface Lens {
   w: number;
   h: number;
   opacity: number;
+  foregroundOpacity?: number;
   /** Inline styles as last written, so they are never read back to compare. */
   writtenClip?: string;
   writtenRadius?: string;
@@ -558,7 +559,7 @@ export function createGlassScene(
       if (!target.w || !target.h || target.opacity < 0.001) return;
       const overlays = ordered.filter((lens) =>
         rank.get(target)! < rank.get(lens)! &&
-        lens.maps && lens.opacity > 0.001 && overlaps(target, lens) && lens.absorbs?.element !== target.element &&
+        lens.maps && lens.opacity > 0.001 && lens.foregroundOpacity !== 0 && overlaps(target, lens) && lens.absorbs?.element !== target.element &&
         !target.element.contains(lens.element) && !lens.element.contains(target.element) &&
         ![...filteredAncestors].some(([ancestor, applied]) => ancestor.element.contains(target.element) && applied.includes(lens)),
       );
@@ -756,6 +757,10 @@ export function createGlassScene(
       }
       const opacity = effectiveOpacity(l.element, root) * (l.options.opacity ?? 1) * (l.outline?.opacity() ?? 1) * (1 - (absorbed.get(l.element) ?? 0));
       if (Math.abs(opacity - l.opacity) > 0.001) { l.opacity = opacity; dirty = true; }
+      // Selection lenses bend labels while travelling, then restore their
+      // original DOM rendering. Their backdrop and illuminated rim remain.
+      const foregroundOpacity = l.element.dataset.glassForegroundRefraction === "resting" ? 0 : 1;
+      if (foregroundOpacity !== l.foregroundOpacity) { l.foregroundOpacity = foregroundOpacity; dirty = true; }
       const dpr = Math.min(devicePixelRatio || 1, 2);
       if (!animated) l.absorbs = undefined;
       if (animated) {

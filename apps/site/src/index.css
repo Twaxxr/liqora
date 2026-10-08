@@ -719,13 +719,9 @@ footer a:focus-visible,
 
 .value-control-example { display: grid; width: 280px; }
 .value-control-example-switch { width: auto; }
+.value-control-example-switch .lg-switch { --lg-switch-width: 160px; --lg-switch-height: 67px; --lg-switch-thumb-width: 94.9px; --lg-switch-thumb-height: 59.8px; --lg-switch-inset: 3.6px; --lg-switch-grow-x: 18.25px; --lg-switch-grow-y: 11.5px; }
 .value-control-example-slider { width: min(330px, 100%); }
-.value-control-example-slider .lg-slider { width: 100%; }
-.value-control-example-slider .lg-slider-control { height: 72px; }
-.value-control-example-slider .lg-slider-track { height: 14px; }
-.value-control-example-slider .lg-slider-thumb { width: 54px; height: 36px; }
-.value-control-example-slider .lg-control-thumb { --lg-control-grow-x: 17px; --lg-control-grow-y: 12px; }
-.value-control-example-slider .lg-slider-ticks { top: 52px; }
+.value-control-example-slider .lg-slider { width: 100%; --lg-slider-control-height: 60px; --lg-slider-track-size: 14px; --lg-slider-thumb-width: 54px; --lg-slider-thumb-height: 36px; --lg-slider-grow-x: 18px; --lg-slider-grow-y: 12px; --lg-slider-tick-offset: 48px; }
 
 /* Only the outer filter frame is stationary; the header remains in page flow. */
 .docs-scroll-scene { position: relative; height: 100dvh; overflow: hidden; }
