@@ -32,14 +32,14 @@ export interface TickerOptions {
 export type StepResult = boolean | { active: boolean; write?: () => void };
 const inputEvents = ["pointerdown", "pointerup", "pointercancel", "pointermove", "pointerenter", "pointerleave", "keydown", "keyup", "focusin", "focusout"];
 const motionEvents = ["transitionrun", "transitionstart", "transitionend", "transitioncancel", "animationstart", "animationiteration", "animationend", "animationcancel"];
-interface Entry { step: (now: number) => StepResult; idle: number; disposed: boolean }
+interface Entry { step: (now: number) => StepResult; idle: number; disposed: boolean; suspended: boolean }
 /** One frame per window for every ticker in it. */
 class Driver {
   private raf = 0;
   private readonly pending = new Set<Entry>();
   constructor(private readonly view: Window) {}
   schedule(entry: Entry) {
-    if (entry.disposed) return;
+    if (entry.disposed || entry.suspended) return;
     this.pending.add(entry);
     if (!this.raf) this.raf = this.view.requestAnimationFrame((now) => this.frame(now));
   }
@@ -49,7 +49,7 @@ class Driver {
     this.pending.clear();
     const writes: (() => void)[] = [];
     for (const entry of entries) {
-      if (entry.disposed) continue;
+      if (entry.disposed || entry.suspended) continue;
       let result: StepResult;
       try { result = entry.step(now); } catch (error) { queueMicrotask(() => { throw error; }); continue; }
       const active = typeof result === "boolean" ? result : result.active;
@@ -68,8 +68,26 @@ export function createTicker(step: (now: number) => StepResult, options: TickerO
   const { root, ignore, onMutation } = options;
   const view = (root.ownerDocument ?? (root as Document)).defaultView ?? window;
   const driver = drivers.get(view) ?? (() => { const d = new Driver(view); drivers.set(view, d); return d; })();
-  const entry: Entry = { step, idle: 0, disposed: false };
+  const entry: Entry = { step, idle: 0, disposed: false, suspended: view.document.visibilityState === "hidden" };
   const wake = () => driver.schedule(entry);
+  let visible = true;
+  const visibleElements = new Set<Element>();
+  const visibility = () => {
+    entry.suspended = !visible || view.document.visibilityState === "hidden";
+    if (!entry.suspended) { entry.idle = 0; wake(); }
+  };
+  // Keep retained glass intact while its scene is outside the viewport. The
+  // margin prepares it before scrolling it into view, at its original quality.
+  const intersection = typeof IntersectionObserver === "function" && root.nodeType === 1
+    ? new IntersectionObserver((records) => {
+      for (const record of records) {
+        if (record.isIntersecting) visibleElements.add(record.target);
+        else visibleElements.delete(record.target);
+      }
+      visible = visibleElements.size > 0;
+      visibility();
+    }, { rootMargin: "128px" }) : undefined;
+  if (intersection) { visibleElements.add(root as Element); intersection.observe(root as Element); }
   const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(wake) : undefined;
   const mutations = typeof MutationObserver === "function"
     ? new MutationObserver((records) => {
@@ -83,21 +101,35 @@ export function createTicker(step: (now: number) => StepResult, options: TickerO
   for (const type of [...inputEvents, ...motionEvents]) target.addEventListener(type, wake, { capture: true, passive: true });
   view.addEventListener("scroll", wake, { capture: true, passive: true });
   view.addEventListener("resize", wake, { passive: true });
-  view.document.addEventListener("visibilitychange", wake);
+  view.document.addEventListener("visibilitychange", visibility);
   const heartbeat = view.setInterval(wake, options.heartbeat ?? 1000);
   wake();
   return {
     wake,
-    observe(element) { sizes?.observe(element); },
-    unobserve(element) { sizes?.unobserve(element); },
+    observe(element) {
+      sizes?.observe(element);
+      // A fixed or positioned lens may remain visible beyond its scene box.
+      if (intersection) {
+        visibleElements.add(element); visible = true;
+        intersection.observe(element); visibility();
+      }
+    },
+    unobserve(element) {
+      sizes?.unobserve(element);
+      if (intersection && element !== root) {
+        intersection.unobserve(element); visibleElements.delete(element);
+        visible = visibleElements.size > 0; visibility();
+      }
+    },
     dispose() {
       entry.disposed = true;
       sizes?.disconnect();
       mutations?.disconnect();
+      intersection?.disconnect();
       for (const type of [...inputEvents, ...motionEvents]) target.removeEventListener(type, wake, { capture: true });
       view.removeEventListener("scroll", wake, { capture: true });
       view.removeEventListener("resize", wake);
-      view.document.removeEventListener("visibilitychange", wake);
+      view.document.removeEventListener("visibilitychange", visibility);
       view.clearInterval(heartbeat);
     },
   };

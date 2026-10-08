@@ -1,0 +1,125 @@
+// Lisse outlines tessellated once on the host, shared with DOM clipping.
+// One compute invocation evaluates the outline once and writes all four planes.
+// Keep the packed RGBA8 atlas identical to maps.wgsl, the reference shader.
+struct Shape {
+  size: vec2f,
+  // First atlas row of this shape, and physical rows per plane.
+  row: f32,
+  rows: f32,
+  // Physical columns this shape covers; the atlas is as wide as its widest shape.
+  columns: f32,
+  dpr: f32,
+  dark: f32,
+  symmetric: f32,
+  // Outline segment range in the shared segment table.
+  start: u32,
+  count: u32,
+  pad: vec2u,
+  // Bezel width, cross-section radius, profile (native/convex/lip), bevel mode.
+  optics: vec4f,
+  // Additional edge highlight, specular, Fresnel, stable micro-distortion.
+  lighting: vec4f,
+}
+struct Batch { count: u32, pad: vec3u, shapes: array<Shape, 32> }
+struct Outline { segments: array<vec4f, 4096> }
+@group(0) @binding(0) var<uniform> batch: Batch;
+@group(0) @binding(1) var<uniform> outline: Outline;
+@group(0) @binding(2) var atlas: texture_storage_2d<rgba8unorm, write>;
+fn sat(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
+// Snell refraction through a circular convex cross-section. The displacement
+// folds a sharp source edge back into the bezel; the inner lip reverses it.
+fn bezel_travel(depth: f32, optics: vec4f) -> f32 {
+  let t = sat(depth / optics.x);
+  let facing = sqrt(max(0.0, t * (2.0 - t)));
+  if (optics.z == 0.0) {
+    return (1.0 - facing) * select(1.0, 0.5 + 0.5 * t, optics.w == 1.0);
+  }
+  let eta = 1.0 / 1.5;
+  let tangent = 1.0 - t;
+  let normalZ = sqrt(max(0.0, 1.0 - tangent * tangent));
+  let k = sqrt(max(0.0, 1.0 - eta * eta * tangent * tangent)) - eta * normalZ;
+  let travel = tangent * k / max(0.0001, eta + k * normalZ);
+  let normalized = travel / (sqrt(1.0 - eta * eta) / eta);
+  let thickness = select(1.0, 0.5 + 0.5 * normalZ, optics.w == 1.0);
+  let convex = normalized * thickness * clamp(optics.y / optics.x, 0.25, 2.0);
+  if (optics.z == 2.0) {
+    let inner = 0.32 * sin(3.14159265 * t) * sin(3.14159265 * t);
+    return clamp(convex - inner, -1.0, 1.0);
+  }
+  return min(1.0, convex);
+}
+fn shape(s: Shape, point: vec2f) -> vec3f {
+  let symmetric = s.symmetric != 0.0;
+  let p = select(point, vec2f(abs(point.x), -abs(point.y)), symmetric) + s.size * 0.5;
+  var distance2 = 1e20;
+  var delta = vec2f(0.0);
+  var outward = vec2f(0.0, -1.0);
+  for (var i = s.start; i < s.start + s.count; i++) {
+    let segment = outline.segments[i];
+    let edge = segment.zw - segment.xy;
+    let nearest = segment.xy + edge * sat(dot(p-segment.xy, edge) / dot(edge, edge));
+    let v = p - nearest;
+    let d2 = dot(v, v);
+    if (d2 < distance2) {
+      distance2 = d2;
+      delta = v;
+      outward = normalize(vec2f(edge.y, -edge.x));
+    }
+  }
+  let direction = select(-1.0, 1.0, dot(delta, outward) >= 0.0);
+  let distance = sqrt(distance2);
+  let normal = select(outward, delta * direction / max(distance, 0.00001), distance > 0.00001);
+  return vec3f(distance * direction, select(normal, vec2f(normal.x, -normal.y) * sign(point), symmetric));
+}
+@compute @workgroup_size(8, 8)
+fn cs_main(@builtin(global_invocation_id) id: vec3u) {
+  let size = textureDimensions(atlas);
+  if (id.x >= size.x || id.y >= size.y / 4u) { return; }
+  var index = 0u;
+  for (var k = 1u; k < batch.count; k++) {
+    if (f32(id.y) >= batch.shapes[k].row / 4.0) { index = k; }
+  }
+  let s = batch.shapes[index];
+  let y = id.y - u32(s.row) / 4u;
+  // Clear unused columns as well, since slots are reused between batches.
+  if (f32(id.x) >= s.columns) {
+    for (var plane = 0u; plane < 4u; plane++) {
+      textureStore(atlas, vec2u(id.x, u32(s.row) + y + plane * u32(s.rows)), vec4f(0.0));
+    }
+    return;
+  }
+  let local = (vec2f(f32(id.x), f32(y)) + 0.5) / vec2f(s.columns, s.rows);
+  let point = local * (s.size + 4.0) - (s.size + 4.0) * 0.5;
+  let field = shape(s, point);
+  let d = field.x; let n = field.yz;
+  let aa = max(abs(n.x) + abs(n.y), 1.0) / s.dpr;
+  let coverage = sat(0.5 - d / aa);
+  let depth = sat(-d / s.optics.x);
+  let edge = bezel_travel(max(0.0, -d), s.optics);
+  let ripple = vec2f(sin(point.x * 0.19 + point.y * 0.13), sin(point.y * 0.21 - point.x * 0.11)) * s.lighting.w * 0.025 * coverage;
+  textureStore(atlas, vec2u(id.x, u32(s.row) + y), vec4f(clamp(vec2f(0.5) - n * edge * 0.5 + ripple, vec2f(0.0), vec2f(1.0)), 0.5, 1.0));
+  textureStore(atlas, vec2u(id.x, u32(s.row) + y + u32(s.rows)), vec4f(1, 1, 1, coverage));
+  // Keep the top/bottom light away from the side outline, including capsules.
+  let spread = 1.08;
+  let directional = pow(sat((abs(n.y) - cos(spread)) / (1.0 - cos(spread))), 1.25);
+  let diffuseDir = pow(sat((abs(n.y) - cos(spread * 0.65)) / (1.0 - cos(spread * 0.65))), 1.25);
+  let stroke = sat((d + 0.9) / aa + 0.5) * sat(0.5 - d / aa);
+  var specular = directional * stroke;
+  specular = specular / (1.0 + 0.5 * (1.0 - specular));
+  let diffuse = diffuseDir * 0.18 * pow(1.0 - sat(-d / 4.5), 2.0) * coverage;
+  let rim = pow(1.0 - depth, 5.0) * coverage;
+  let grazing = pow(1.0 - sqrt(max(0.0, depth * (2.0 - depth))), 5.0) * coverage;
+  let lightDirection = pow(abs(dot(n, vec2f(0.5, -0.8660254))), 4.0);
+  let profileLight = select(0.0, lightDirection * stroke * 0.55, s.optics.z != 0.0);
+  let extra = s.lighting.x * rim + s.lighting.y * lightDirection * rim + s.lighting.z * grazing * 0.28 + profileLight;
+  let highlight = sat(specular * mix(1.0, 0.82, s.dark) + diffuse * mix(1.0, 0.40, s.dark) + extra);
+  textureStore(atlas, vec2u(id.x, u32(s.row) + y + 2u * u32(s.rows)), vec4f(vec3f(mix(1.0, 0.82, s.dark)), highlight));
+  let adjusted = d - 0.5;
+  let falloff = 1.0 - sat(-adjusted / 0.5);
+  let ramp = mix(select(0.0, 1.0, falloff > 0.0), falloff, 0.75);
+  let outline = ramp * sat((adjusted + 0.5) / aa + 0.5) * sat(-adjusted / aa + 0.5);
+  let sideSpread = 0.98;
+  let weights = clamp((vec2f(n.x, -n.x) - cos(sideSpread)) / (1.0 - cos(sideSpread)), vec2f(0), vec2f(1)) * outline;
+  let shade = dot(weights / (vec2f(1) + 0.4 * (vec2f(1) - weights)), vec2f(1));
+  textureStore(atlas, vec2u(id.x, u32(s.row) + y + 3u * u32(s.rows)), vec4f(0, 0, 0, shade * mix(0.48, 0.60, s.dark)));
+}

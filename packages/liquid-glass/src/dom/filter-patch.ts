@@ -6,18 +6,27 @@
  * blinking for a frame whenever a surface animates. Image primitives name
  * their map with a short `data-map` token, resolved to its URL only when the
  * map changes. */
+const previousMarkup = new WeakMap<Element, Map<string, string>>();
 export function patchFilters(defs: Element, markup: readonly string[], resolve: (token: string) => string | undefined): (id: string) => string {
-  const template = defs.ownerDocument.createElement("template");
-  // Template content is inert: parsing never fetches or decodes images.
-  template.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${markup.join("")}</svg>`;
-  const next = [...template.content.firstElementChild!.children];
+  const previous = previousMarkup.get(defs);
+  const written = new Map<string, string>();
   const live = new Map<string, Element>();
   for (const filter of [...defs.children]) live.set(filter.getAttribute("data-filter")!, filter);
   const ids = new Map<string, string>();
-  for (const filter of next) {
-    const base = filter.id;
+  for (const text of markup) {
+    const base = /\bid="([^"]+)"/.exec(text)?.[1];
+    if (!base) throw new Error("Glass filter has no id.");
+    written.set(base, text);
     const current = live.get(base);
     live.delete(base);
+    if (current && previous?.get(base) === text) {
+      ids.set(base, current.id);
+      continue;
+    }
+    const template = defs.ownerDocument.createElement("template");
+    // Only changed filters need parsing; static neighbours retain their graph.
+    template.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${text}</svg>`;
+    const filter = template.content.firstElementChild!.firstElementChild!;
     if (current) {
       reconcile(current, filter, resolve);
       ids.set(base, current.id);
@@ -35,6 +44,7 @@ export function patchFilters(defs: Element, markup: readonly string[], resolve: 
     ids.set(base, created.id);
   }
   for (const filter of live.values()) filter.remove();
+  previousMarkup.set(defs, written);
   return (id) => ids.get(id) ?? id;
 }
 let version = 0;

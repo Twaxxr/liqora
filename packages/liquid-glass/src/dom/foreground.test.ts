@@ -23,7 +23,7 @@ test("foreground optics use local coordinates and preserve transparent input out
 
 test("upper lenses process the result of preceding foreground passes", () => {
   const target = { x: 0, y: 0, w: 200, h: 100 } as ForegroundLens;
-  const overlay = { ...target, opacity: 1, options: { material: "clear" }, maps: { mask: "mask", displacement: "map" } } as ForegroundLens;
+  const overlay = { ...target, opacity: 1, options: { material: "clear", blur: 2 }, maps: { mask: "mask", displacement: "map" } } as ForegroundLens;
   expect(foregroundFilter("test", target, [overlay, overlay])).toContain('<feGaussianBlur in="f0result"');
 });
 
@@ -37,7 +37,7 @@ test("foreground track receives independent RGB travel and specular saturation",
   expect(filter).toContain('scale="0.126"');
   expect(filter).toContain('scale="0.12"');
   expect(filter).toContain('scale="0.114"');
-  expect(filter).toContain('stdDeviation="0 0"');
+  expect(filter).not.toContain('feGaussianBlur');
   expect(filter).toContain('type="saturate" values="7"');
   expect(filter).toContain('slope="0.4"');
   expect(filter).toContain('in="SourceGraphic" in2="f0mask" operator="out"');
@@ -98,4 +98,24 @@ test("paint order respects positioner stacking before DOM order", () => {
     globalThis.getComputedStyle = originalStyle;
     globalThis.Node = originalNode;
   }
+});
+
+test("foreground optical buffers cover RGB and blur sampling without processing the full target", () => {
+  const target = { x: 0, y: 0, w: 1920, h: 1080 } as ForegroundLens;
+  const overlay = { x: 800, y: 500, w: 90, h: 60, opacity: 1,
+    options: { refraction: 24, chromAberration: .05, blur: .2, specularSaturation: 7, specularOpacity: .4 },
+    maps: { mask: "mask", displacement: "map", highlight: "highlight" },
+  } as ForegroundLens;
+  const markup = foregroundFilter("large", target, [overlay]);
+  const tag = /<feGaussianBlur\b[^>]*>/.exec(markup)![0];
+  const value = (name: string) => Number(new RegExp(`\\b${name}="([^"]+)"`).exec(tag)![1]);
+  const left = value("x") * target.w, top = value("y") * target.h;
+  const width = value("width") * target.w, height = value("height") * target.h;
+  expect(left).toBeLessThan(overlay.x - 24 * 1.05 - .6);
+  expect(top).toBeLessThan(overlay.y - 24 * 1.05 - .6);
+  expect(left + width).toBeGreaterThan(overlay.x + overlay.w + 24 * 1.05 + .6);
+  expect(top + height).toBeGreaterThan(overlay.y + overlay.h + 24 * 1.05 + .6);
+  expect(width * height).toBeLessThan(target.w * target.h * .02);
+  // The original foreground outside the mask retains its full filter region.
+  expect(markup).toContain('<feComposite in="SourceGraphic" in2="f0mask" operator="out" result="f0outside"/>');
 });

@@ -44,7 +44,10 @@ function fixture({ vertical = false, rtl = false, motion = "full", interactive =
       click() { selected = i; this.clicks++; },
     };
   });
-  const style = { left: "", top: "", width: "", height: "", scale: "" };
+  let styleWrites = 0;
+  const style = new Proxy({ left: "", top: "", width: "", height: "", scale: "" }, {
+    set(target, key, value) { styleWrites++; return Reflect.set(target, key, value); },
+  });
   const dataset: Record<string, string> = {};
   const indicator = { style, dataset, parentElement: list, ownerDocument: { defaultView: view },
     hasAttribute: () => forceActive,
@@ -53,6 +56,7 @@ function fixture({ vertical = false, rtl = false, motion = "full", interactive =
   const frames = (count = 1) => { let busy: boolean | void; for (let i = 0; i < count; i++) busy = animator.frame(time += 1000 / 60); return busy; };
   frames();
   return { input, view, tabs, animator, style, dataset, frames,
+    writes: () => styleWrites,
     force: (value: boolean) => { forceActive = value; },
     select: (value: number) => { selected = value; }, selected: () => selected,
     pointer: (at: number, target = tabs[0]) => ({ target, clientX: 100 + (vertical ? 16 : at) * scale, clientY: 50 + (vertical ? at : 16) * scale }),
@@ -161,4 +165,22 @@ test("instant selection changes do not flash refracted text", () => {
       expect(parseFloat(f.style.left)).toBe(103);
     } finally { f.animator.dispose(); }
   }
+});
+
+test("a resting or lifted tab selection makes no repeated layout style writes", () => {
+  const f = fixture();
+  try {
+    f.frames(120);
+    const resting = f.writes();
+    expect(f.frames(60)).toBe(false);
+    expect(f.writes()).toBe(resting);
+    f.force(true); f.frames(120);
+    const lifted = f.writes();
+    expect(f.frames(60)).toBe(false);
+    expect(f.writes()).toBe(lifted);
+    expect(f.dataset.glassLifted).toBe("");
+    f.select(2); f.frames(120);
+    expect(f.writes()).toBeGreaterThan(lifted);
+    expect(f.dataset.glassForegroundRefraction).toBe("resting");
+  } finally { f.animator.dispose(); }
 });

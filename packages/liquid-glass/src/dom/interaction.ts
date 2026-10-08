@@ -37,6 +37,15 @@ function disabled(element: HTMLElement): boolean {
 export function attachInteraction(element: HTMLElement, motion: () => GlassMotion): SurfaceAnimator {
   const view = element.ownerDocument.defaultView!;
   const saved = { translate: element.style.translate, scale: element.style.scale };
+  const properties = new Map<string, string>();
+  const property = (name: string, value: string) => {
+    if (properties.get(name) === value) return;
+    properties.set(name, value);
+    element.style.setProperty(name, value);
+  };
+  const style = (name: keyof typeof saved, value: string) => {
+    if (element.style[name] !== value) element.style[name] = value;
+  };
   const tx = new Spring(0, springs.track), ty = new Spring(0, springs.track);
   const press = new Spring(0, springs.press), glow = new Spring(0, springs.glow);
   // Press origin, latest client position, and the element's last sampled center.
@@ -171,22 +180,24 @@ export function attachInteraction(element: HTMLElement, motion: () => GlassMotio
       const lit = glow.value > 0.001;
       if (moved || scaled || lit || pointer || keyboard) {
         written = true;
-        element.style.translate = moved ? `${tx.value.toFixed(3)}px ${ty.value.toFixed(3)}px` : saved.translate;
-        element.style.scale = scaled ? `${sx.toFixed(5)} ${sy.toFixed(5)}` : saved.scale;
-        element.style.setProperty("--lg-glow", lit ? glow.value.toFixed(4) : "0");
-        element.style.setProperty("--lg-glow-x", `${glowX.toFixed(2)}px`);
-        element.style.setProperty("--lg-glow-y", `${glowY.toFixed(2)}px`);
-        element.style.setProperty("--lg-glow-size", `${Math.max(36, Math.min(180, Math.max(width, height) * 0.9)).toFixed(1)}px`);
-        if (pointer || keyboard) element.dataset.glassPressed = "";
-        else delete element.dataset.glassPressed;
+        style("translate", moved ? `${tx.value.toFixed(3)}px ${ty.value.toFixed(3)}px` : saved.translate);
+        style("scale", scaled ? `${sx.toFixed(5)} ${sy.toFixed(5)}` : saved.scale);
+        property("--lg-glow", lit ? glow.value.toFixed(4) : "0");
+        property("--lg-glow-x", `${glowX.toFixed(2)}px`);
+        property("--lg-glow-y", `${glowY.toFixed(2)}px`);
+        property("--lg-glow-size", `${Math.max(36, Math.min(180, Math.max(width, height) * 0.9)).toFixed(1)}px`);
+        if (pointer || keyboard) {
+          if (element.dataset.glassPressed === undefined) element.dataset.glassPressed = "";
+        } else if (element.dataset.glassPressed !== undefined) delete element.dataset.glassPressed;
       } else if (written) {
         written = false;
         element.style.translate = saved.translate;
         element.style.scale = saved.scale;
         for (const name of ["--lg-glow", "--lg-glow-x", "--lg-glow-y", "--lg-glow-size"]) element.style.removeProperty(name);
+        properties.clear();
         delete element.dataset.glassPressed;
       }
-      return Boolean(pointer || keyboard) || written || [tx, ty, press, glow].some((spring) => !spring.settled);
+      return Boolean(pointer || keyboard) || [tx, ty, press, glow].some((spring) => !spring.settled);
     },
     dispose() {
       release();

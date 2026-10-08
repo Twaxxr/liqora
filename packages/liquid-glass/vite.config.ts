@@ -11,7 +11,7 @@ export default defineConfig({
             output.code = output.code.replaceAll(
               `${import.meta.dirname}/src/gpu/maps.wgsl`,
               "liquid-glass/maps.wgsl",
-            );
+            ).replaceAll(`${import.meta.dirname}/src/gpu/maps.compute.wgsl`, "liquid-glass/maps.compute.wgsl");
       },
     },
   ],

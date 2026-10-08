@@ -137,10 +137,14 @@ interface Placed { maps: MaterialMaps; x: number; y: number; w: number; h: numbe
 /** Time a new map image is given to load and decode before it is shown. */
 const warmup = 50;
 /** Opacity the material inherits from its element and ancestors in the scene. */
-function effectiveOpacity(element: HTMLElement, root: HTMLElement): number {
+function effectiveOpacity(element: HTMLElement, root: HTMLElement, measured: WeakMap<HTMLElement, number>): number {
   let opacity = 1;
   for (let node: HTMLElement | null = element; node && node !== root; node = node.parentElement) {
-    const value = Number(getComputedStyle(node).opacity);
+    let value = measured.get(node);
+    if (value === undefined) {
+      value = Number(getComputedStyle(node).opacity);
+      measured.set(node, value);
+    }
     if (Number.isFinite(value)) opacity *= value;
     if (opacity < 0.001) return 0;
   }
@@ -664,6 +668,7 @@ export function createGlassScene(
   function tick(now: number) {
     if (disposed) return false;
     const writes: (() => void)[] = [];
+    const opacities = new WeakMap<HTMLElement, number>();
     let busy = updateControlMotion(root, now);
     // Lenses are positioned in the content layer's space, which scrolls in flow layout.
     const r = (content ?? root).getBoundingClientRect();
@@ -755,7 +760,7 @@ export function createGlassScene(
         Object.assign(l, { x, y, w, h });
         dirty = true;
       }
-      const opacity = effectiveOpacity(l.element, root) * (l.options.opacity ?? 1) * (l.outline?.opacity() ?? 1) * (1 - (absorbed.get(l.element) ?? 0));
+      const opacity = effectiveOpacity(l.element, root, opacities) * (l.options.opacity ?? 1) * (l.outline?.opacity() ?? 1) * (1 - (absorbed.get(l.element) ?? 0));
       if (Math.abs(opacity - l.opacity) > 0.001) { l.opacity = opacity; dirty = true; }
       // Selection lenses bend labels while travelling, then restore their
       // original DOM rendering. Their backdrop and illuminated rim remain.

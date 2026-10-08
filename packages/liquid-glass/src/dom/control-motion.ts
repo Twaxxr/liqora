@@ -66,15 +66,18 @@ function easeInOut(x: number): number {
 }
 /** Controls have their own measured geometry; generic button press scaling must not compound it. */
 export function attachNativeControlMotion(element: HTMLElement, motion: GlassMotion, interactive: boolean): () => void {
-  const view = element.ownerDocument.defaultView!;
+  const document = element.ownerDocument;
+  const view = document.defaultView!;
   const preference = view.matchMedia("(prefers-reduced-motion: reduce)");
   const position: Position = { value: 0, velocity: 0 };
   const isSwitch = element.classList.contains("lg-switch-thumb");
   let raf = 0, previous = 0, deadline = 0, pressStart = 0, progress = 0;
   let active = false, pulse = false, initialized = false, targetX = 0, appliedX = 0;
+  let visible = true;
   // The lifted lens stretches along its path in proportion to its speed.
   let lastX: number | undefined, speed = 0;
   let transition = { time: 0, from: 0, to: 0 };
+  let writtenProgress: string | undefined, writtenScale: string | undefined, writtenTranslate: string | undefined;
   const full = () => motion === "full" && !preference.matches;
   function tick(now: number) {
     raf = 0;
@@ -92,8 +95,13 @@ export function attachNativeControlMotion(element: HTMLElement, motion: GlassMot
     if (!enabled) progress = active ? 1 : 0;
     else if (pulse) progress = sampleTap((now - pressStart) / 1000);
     else progress = transition.from + (transition.to - transition.from) * easeInOut(Math.min(1, (now - transition.time) / 200));
-    element.style.setProperty("--lg-control-progress", String(progress));
-    element.dataset.glassMotion = enabled ? "full" : motion === "none" ? "none" : "reduced";
+    const progressValue = String(progress);
+    if (writtenProgress !== progressValue) {
+      writtenProgress = progressValue;
+      element.style.setProperty("--lg-control-progress", progressValue);
+    }
+    const level = enabled ? "full" : motion === "none" ? "none" : "reduced";
+    if (element.dataset.glassMotion !== level) element.dataset.glassMotion = level;
     // Only switch side changes spring. A slider follows its numeric input directly.
     const bounds = element.getBoundingClientRect();
     // The center is unaffected by the stretch scale applied below.
@@ -105,22 +113,42 @@ export function attachNativeControlMotion(element: HTMLElement, motion: GlassMot
     targetX = nextX;
     if (enabled && isSwitch) advanceSwitchPosition(position, targetX, dt);
     appliedX = position.value - targetX;
-    if (isSwitch) element.style.translate = `${appliedX}px 0`;
+    if (isSwitch) {
+      const translate = `${appliedX}px 0`;
+      if (writtenTranslate !== translate) {
+        writtenTranslate = translate;
+        element.style.translate = translate;
+      }
+    }
     const visualX = isSwitch ? position.value : nextX;
     if (lastX !== undefined && dt > 0) speed += ((visualX - lastX) / dt - speed) * Math.min(1, dt * 18);
     lastX = visualX;
     if (!enabled) speed = 0;
     const stretch = Math.min(0.28, Math.abs(speed) * 0.0007) * progress;
-    if (stretch > 1e-4) element.style.scale = `${(1 + stretch).toFixed(4)} ${(1 / Math.sqrt(1 + stretch)).toFixed(4)}`;
-    else element.style.removeProperty("scale");
+    const scale = stretch > 1e-4 ? `${(1 + stretch).toFixed(4)} ${(1 / Math.sqrt(1 + stretch)).toFixed(4)}` : "";
+    if (writtenScale !== scale) {
+      writtenScale = scale;
+      if (scale) element.style.scale = scale;
+      else element.style.removeProperty("scale");
+    }
     if (Math.abs(speed) > 1) deadline = Math.max(deadline, now + 100);
     if (now < deadline || Math.abs(position.velocity) > 0.01) raf = view.requestAnimationFrame(tick);
     else previous = 0;
   }
   function wake() {
     deadline = performance.now() + 800;
-    if (!raf) raf = view.requestAnimationFrame(tick);
+    if (!raf && visible && document.visibilityState !== "hidden") raf = view.requestAnimationFrame(tick);
   }
+  function visibility() {
+    if (!visible || document.visibilityState === "hidden") {
+      view.cancelAnimationFrame(raf); raf = 0; previous = 0; initialized = false;
+      lastX = undefined; speed = 0;
+    } else wake();
+  }
+  const intersection = typeof IntersectionObserver === "function"
+    ? new IntersectionObserver((records) => { visible = records.some((record) => record.isIntersecting); visibility(); }, { rootMargin: "128px" }) : undefined;
+  intersection?.observe(element);
+  document.addEventListener("visibilitychange", visibility);
   controls.set(element, {
     update(now) {
       if (!raf || previous === now) return;
@@ -139,6 +167,7 @@ export function attachNativeControlMotion(element: HTMLElement, motion: GlassMot
   return () => {
     controls.delete(element);
     view.cancelAnimationFrame(raf); observer.disconnect();
+    intersection?.disconnect(); document.removeEventListener("visibilitychange", visibility);
     preference.removeEventListener("change", wake); view.removeEventListener("scroll", scroll, true);
     element.style.removeProperty("--lg-control-progress"); element.style.removeProperty("scale"); if (isSwitch) element.style.removeProperty("translate");
     delete element.dataset.glassMotion;

@@ -1,6 +1,7 @@
+import { memo } from "react"
 import { backdropSizes, wallpaperImage } from "./wallpapers"
 
-export function Backdrop({
+export const Backdrop = memo(function Backdrop({
   kind = "landscape",
   appearance = "light",
 }: {
@@ -32,4 +33,4 @@ export function Backdrop({
       />
     </div>
   )
-}
+})

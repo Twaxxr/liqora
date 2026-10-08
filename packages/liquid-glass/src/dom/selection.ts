@@ -11,6 +11,12 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
   if (!list) return { frame() {}, dispose() {} };
   const view = indicator.ownerDocument.defaultView!;
   const saved = { left: indicator.style.left, top: indicator.style.top, width: indicator.style.width, height: indicator.style.height, scale: indicator.style.scale };
+  const written = new Map<keyof typeof saved, string>();
+  const style = (name: keyof typeof saved, value: string) => {
+    if (written.get(name) === value) return;
+    written.set(name, value);
+    indicator.style[name] = value;
+  };
   const savedRefraction = indicator.dataset.glassForegroundRefraction;
   const refractionState = (travelling: boolean) => {
     const state = travelling ? "moving" : "resting";
@@ -169,12 +175,14 @@ export function attachSelectionLens(indicator: HTMLElement, motion: () => GlassM
       const drawnLength = Math.max(0, Math.min(length.value * along + 2 * growth, 2 * Math.min(center - 1, axis - 1 - center)));
       const drawnThickness = Math.max(0, Math.min(thickness.value * across + 2 * growth, 2 * Math.min(crossCenter - 1, other - 1 - crossCenter)));
       const at = center - drawnLength / 2, side = crossCenter - drawnThickness / 2;
-      indicator.style.left = `${(v ? side : at).toFixed(3)}px`;
-      indicator.style.top = `${(v ? at : side).toFixed(3)}px`;
-      indicator.style.width = `${(v ? drawnThickness : drawnLength).toFixed(3)}px`;
-      indicator.style.height = `${(v ? drawnLength : drawnThickness).toFixed(3)}px`;
-      indicator.style.scale = saved.scale;
-      if (held || lift.value > 0.001) indicator.dataset.glassLifted = ""; else delete indicator.dataset.glassLifted;
+      style("left", `${(v ? side : at).toFixed(3)}px`);
+      style("top", `${(v ? at : side).toFixed(3)}px`);
+      style("width", `${(v ? drawnThickness : drawnLength).toFixed(3)}px`);
+      style("height", `${(v ? drawnLength : drawnThickness).toFixed(3)}px`);
+      style("scale", saved.scale);
+      if (held || lift.value > 0.001) {
+        if (indicator.dataset.glassLifted === undefined) indicator.dataset.glassLifted = "";
+      } else if (indicator.dataset.glassLifted !== undefined) delete indicator.dataset.glassLifted;
       return !ready || Boolean(drag) || keyboard || [pos, cross, length, thickness, lift].some((spring) => !spring.settled);
     },
     dispose() {

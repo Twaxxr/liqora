@@ -4,7 +4,7 @@ import type { MapGeometry } from "../gpu/index.js";
 import { materialMapOptions } from "../core/materials.js";
 import { capsuleMapGeometry, releaseMapToken } from "./map-image.js";
 import type { MapPlane } from "./map-image.js";
-import { claimFirstPaint, loadStoredMaps, peekStoredMaps, preloadStoredMaps, preloadedKeys, saveStoredMaps } from "./map-store.js";
+import { claimFirstPaint, loadStoredMaps, peekStoredMaps, preloadStoredMaps, saveStoredMaps } from "./map-store.js";
 export interface MaterialMaps {
   displacement: string;
   mask: string;
@@ -25,21 +25,9 @@ const version = (() => {
   return (hash >>> 0).toString(36);
 })();
 const cache = new Map<string, Promise<MaterialMaps>>();
-/** Stored maps are read and decoded while the page is still loading, so the
- * first frame that measures a surface finds its glass ready. */
+/** Read stored bytes early; decode only maps an actual surface requests. */
 if (typeof indexedDB !== "undefined" && typeof Image !== "undefined") {
-  const prefix = `${version}|`;
-  void preloadStoredMaps(prefix).then(() => {
-    for (const stored of preloadedKeys()) {
-      const key = stored.slice(prefix.length);
-      let g: MapGeometry, slice: boolean;
-      try {
-        const [width, height, radius, dpr, appearance, outline, sliceCapsule, optics] = JSON.parse(key) as [number, number, MapGeometry["radius"], number, MapGeometry["appearance"], MapGeometry["outline"], boolean, ReturnType<typeof materialMapOptions>];
-        g = { width, height, radius, dpr, appearance, outline, ...optics }; slice = sliceCapsule;
-      } catch { continue; }
-      if (!cache.has(key)) materialMaps(g, slice).catch(() => undefined);
-    }
-  });
+  void preloadStoredMaps(`${version}|`);
 }
 export function getMaterialMaps(g: MapGeometry): Promise<MaterialMaps> {
   return materialMaps(g);
@@ -129,12 +117,16 @@ function materialMaps(g: MapGeometry, sliceCapsule = false, persist = true): Pro
 }
 /** Decoded images, kept alive while their maps are cached. */
 const decoded = new Map<string, HTMLImageElement>();
-export async function decode(url: string): Promise<void> {
-  if (decoded.has(url) || typeof Image === "undefined") return;
+const decoding = new Map<string, Promise<void>>();
+export function decode(url: string): Promise<void> {
+  if (decoded.has(url) || typeof Image === "undefined") return Promise.resolve();
+  const pending = decoding.get(url);
+  if (pending) return pending;
   const image = new Image();
   image.src = url;
-  await image.decode();
-  decoded.set(url, image);
+  const result = image.decode().then(() => { decoded.set(url, image); }).finally(() => { decoding.delete(url); });
+  decoding.set(url, result);
+  return result;
 }
 const lastUse = new WeakMap<MaterialMaps, number>();
 const settled = new Map<string, MaterialMaps>();
